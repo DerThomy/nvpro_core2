@@ -67,16 +67,23 @@ void nvvk::GBuffer::deinit()
   m_info = {};
 }
 
-VkResult nvvk::GBuffer::update(VkCommandBuffer cmd, VkExtent2D newSize)
+VkResult nvvk::GBuffer::update(VkCommandBuffer cmd, VkExtent2D newSize, VkSampleCountFlagBits newSampleCount)
 {
-  if(newSize.width == m_size.width && newSize.height == m_size.height)
+  if(newSize.width == m_size.width && newSize.height == m_size.height && newSampleCount == m_info.sampleCount)
   {
     return VK_SUCCESS;  // Nothing to do
   }
 
+  vkDeviceWaitIdle(m_info.allocator->getDevice());
   deinitResources();
   m_size = newSize;
+  m_info.sampleCount = newSampleCount;
   return initResources(cmd);
+}
+
+VkResult nvvk::GBuffer::update(VkCommandBuffer cmd, VkExtent2D newSize)
+{
+  return update(cmd, newSize, m_info.sampleCount);
 }
 
 VkDescriptorSet nvvk::GBuffer::getDescriptorSet(uint32_t i) const
@@ -94,6 +101,11 @@ VkImage nvvk::GBuffer::getColorImage(uint32_t i /*= 0*/) const
   return m_res.gBufferColor[i].image;
 }
 
+VkImage nvvk::GBuffer::getColorMSAAImage(uint32_t i) const
+{
+  return m_res.gBufferColorMSAA[i].image;
+}
+
 VkImage nvvk::GBuffer::getDepthImage() const
 {
   return m_res.gBufferDepth.image;
@@ -101,6 +113,15 @@ VkImage nvvk::GBuffer::getDepthImage() const
 
 VkImageView nvvk::GBuffer::getColorImageView(uint32_t i /*= 0*/) const
 {
+  return m_res.gBufferColor[i].descriptor.imageView;
+}
+
+VkImageView nvvk::GBuffer::getRenderImageView(uint32_t i) const
+{
+  if(m_info.sampleCount > VK_SAMPLE_COUNT_1_BIT && !m_res.gBufferColorMSAA.empty())
+  {
+    return m_res.gBufferColorMSAA[i].descriptor.imageView;
+  }
   return m_res.gBufferColor[i].descriptor.imageView;
 }
 
@@ -141,25 +162,29 @@ VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
   nvvk::DebugUtil&    dutil = nvvk::DebugUtil::getInstance();
   const VkImageLayout layout{VK_IMAGE_LAYOUT_GENERAL};
   VkDevice            device = m_info.allocator->getDevice();
+  bool                isMsaa = m_info.sampleCount > VK_SAMPLE_COUNT_1_BIT;
 
   const auto numColor = static_cast<uint32_t>(m_info.colorFormats.size());
 
   m_res.gBufferColor.resize(numColor);
   m_res.uiImageViews.resize(numColor);
+  
+  if(isMsaa)
+    m_res.gBufferColorMSAA.resize(numColor);
 
   for(uint32_t c = 0; c < numColor; c++)
   {
     // Color image and view
     const VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT
                                     | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    const VkImageCreateInfo info = {
+    VkImageCreateInfo info = {
         .sType       = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType   = VK_IMAGE_TYPE_2D,
         .format      = m_info.colorFormats[c],
         .extent      = {m_size.width, m_size.height, 1},
         .mipLevels   = 1,
         .arrayLayers = 1,
-        .samples     = m_info.sampleCount,
+        .samples     = VK_SAMPLE_COUNT_1_BIT,
         .usage       = usage,
     };
     VkImageViewCreateInfo viewInfo = {
@@ -180,6 +205,19 @@ VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
 
     // Set the sampler for the color attachment
     m_res.gBufferColor[c].descriptor.sampler = m_info.imageSampler;
+    if(isMsaa)
+    {
+      // Transient usage allows tile-based GPUs to not allocate backing memory if possible, 
+      // but we need standard TRANSFER/ATTACHMENT bits for clears and resolves.
+      const VkImageUsageFlags msaaUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // DST for Clear
+      
+      info.samples = m_info.sampleCount;
+      info.usage   = msaaUsage;
+      
+      NVVK_FAIL_RETURN(m_info.allocator->createImage(m_res.gBufferColorMSAA[c], info, viewInfo));
+      dutil.setObjectName(m_res.gBufferColorMSAA[c].image, "G-Color-MSAA-" + std::to_string(c));
+      dutil.setObjectName(m_res.gBufferColorMSAA[c].descriptor.imageView, "G-Color-MSAA-" + std::to_string(c));
+    }
   }
 
   if(m_info.depthFormat != VK_FORMAT_UNDEFINED)
@@ -208,34 +246,104 @@ VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
   }
 
   {  // Clear all images and change layout
-    std::vector<VkImageMemoryBarrier2> barriers(numColor);
-    for(uint32_t c = 0; c < numColor; c++)
-    {
-      // Best layout for clearing color
-      barriers[c] = nvvk::makeImageMemoryBarrier({.image     = m_res.gBufferColor[c].image,
-                                                  .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                                                  .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL});
-    }
-    const VkDependencyInfo depInfo{.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                                   .imageMemoryBarrierCount = numColor,
-                                   .pImageMemoryBarriers    = barriers.data()};
-    vkCmdPipelineBarrier2(cmd, &depInfo);
+    std::vector<VkImageMemoryBarrier2> barriers;
 
-    for(uint32_t c = 0; c < numColor; c++)
-    {
-      // Clear to avoid garbage data
-      const VkClearColorValue                      clear_value = {{0.F, 0.F, 0.F, 0.F}};
-      const std::array<VkImageSubresourceRange, 1> range       = {
+    const VkClearColorValue                      clear_value = {{0.F, 0.F, 0.F, 0.F}};
+    const std::array<VkImageSubresourceRange, 1> range       = {
           {{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1}}};
-      vkCmdClearColorImage(cmd, m_res.gBufferColor[c].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_value,
-                           uint32_t(range.size()), range.data());
+    const VkClearDepthStencilValue               clear_depth = {1.0f, 0};
+    const VkImageSubresourceRange                range_depth = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
 
-      // Setting the layout to the final one
-      barriers[c] = nvvk::makeImageMemoryBarrier(
-          {.image = m_res.gBufferColor[c].image, .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, .newLayout = layout});
-      m_res.gBufferColor[c].descriptor.imageLayout = layout;
+    for(uint32_t c = 0; c < numColor; c++)
+    {
+      barriers.push_back(nvvk::makeImageMemoryBarrier({
+          .image     = m_res.gBufferColor[c].image,
+          .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+          .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+      }));
+
+      // If MSAA exists, transition it too
+      if(isMsaa)
+      {
+         barriers.push_back(nvvk::makeImageMemoryBarrier({
+            .image     = m_res.gBufferColorMSAA[c].image,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+         }));
+      }
     }
-    vkCmdPipelineBarrier2(cmd, &depInfo);
+
+    if(m_res.gBufferDepth.image != VK_NULL_HANDLE)
+    {
+      barriers.push_back(nvvk::makeImageMemoryBarrier({
+          .image            = m_res.gBufferDepth.image,
+          .oldLayout        = VK_IMAGE_LAYOUT_UNDEFINED,
+          .newLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+          .subresourceRange = range_depth,
+      }));
+    }
+
+    const VkDependencyInfo depInfoClear{.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                                   .imageMemoryBarrierCount = (uint32_t)barriers.size(),
+                                   .pImageMemoryBarriers    = barriers.data()};
+    vkCmdPipelineBarrier2(cmd, &depInfoClear);
+    barriers.clear();
+
+    // Clear ALL images
+    for(uint32_t c = 0; c < numColor; c++)
+    {
+      vkCmdClearColorImage(cmd, m_res.gBufferColor[c].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_value, uint32_t(range.size()), range.data());
+
+      // 2. Clear MSAA Image (if exists)
+      if(isMsaa)
+      {
+        vkCmdClearColorImage(cmd, m_res.gBufferColorMSAA[c].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_value, uint32_t(range.size()), range.data());
+      }
+    }
+
+    if(m_res.gBufferDepth.image != VK_NULL_HANDLE)
+    {
+      vkCmdClearDepthStencilImage(cmd, m_res.gBufferDepth.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_depth, 1, &range_depth);
+    }
+
+    // Transition to Final Layout
+    for(uint32_t c = 0; c < numColor; c++)
+    {
+      barriers.push_back(nvvk::makeImageMemoryBarrier({
+          .image     = m_res.gBufferColor[c].image,
+          .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+          .newLayout = layout 
+      }));
+      m_res.gBufferColor[c].descriptor.imageLayout = layout;
+
+      // 2. MSAA Image -> COLOR_ATTACHMENT_OPTIMAL (Ready for Rendering)
+      if(isMsaa)
+      {
+         barriers.push_back(nvvk::makeImageMemoryBarrier({
+            .image     = m_res.gBufferColorMSAA[c].image,
+            .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+         }));
+         // MSAA descriptor layout is less important as we rarely sample it, but let's keep it consistent
+         m_res.gBufferColorMSAA[c].descriptor.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; 
+      }
+    }
+
+    if(m_res.gBufferDepth.image != VK_NULL_HANDLE)
+    {
+      barriers.push_back(nvvk::makeImageMemoryBarrier({
+          .image            = m_res.gBufferDepth.image,
+          .oldLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+          .newLayout        = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+          .subresourceRange = range_depth,
+      }));
+      m_res.gBufferDepth.descriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    }
+
+    const VkDependencyInfo depInfoLayout{.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                                         .imageMemoryBarrierCount = (uint32_t)barriers.size(),
+                                         .pImageMemoryBarriers    = barriers.data()};
+    vkCmdPipelineBarrier2(cmd, &depInfoLayout);
   }
 
   // Descriptor Set for ImGUI
@@ -301,16 +409,25 @@ void nvvk::GBuffer::deinitResources()
   {
     m_info.allocator->destroyImage(bc);
   }
+  m_res.gBufferColor.clear();
+
+  for(nvvk::Image bc : m_res.gBufferColorMSAA)
+  {
+    m_info.allocator->destroyImage(bc);
+  }
+  m_res.gBufferColorMSAA.clear();
 
   if(m_res.gBufferDepth.image != VK_NULL_HANDLE)
   {
     m_info.allocator->destroyImage(m_res.gBufferDepth);
+    m_res.gBufferDepth = {};
   }
 
   for(const VkImageView& view : m_res.uiImageViews)
   {
     vkDestroyImageView(device, view, nullptr);
   }
+  m_res.uiImageViews.clear();
 }
 
 

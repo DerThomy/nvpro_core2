@@ -78,12 +78,14 @@ public:
 
   // Set or reset the size of the G-Buffers
   VkResult update(VkCommandBuffer cmd, VkExtent2D newSize);
+  VkResult update(VkCommandBuffer cmd, VkExtent2D newSize, VkSampleCountFlagBits newSampleCount);
 
 
   //--- Getters for the GBuffer resources -------------------------
   VkDescriptorSet              getDescriptorSet(uint32_t i = 0) const;  // Can be use as ImTextureID for ImGui
   VkExtent2D                   getSize() const;
   VkImage                      getColorImage(uint32_t i = 0) const;
+  VkImage                      getColorMSAAImage(uint32_t i = 0) const;
   VkImage                      getDepthImage() const;
   VkImageView                  getColorImageView(uint32_t i = 0) const;
   const VkDescriptorImageInfo& getDescriptorImageInfo(uint32_t i = 0) const;
@@ -92,6 +94,7 @@ public:
   VkFormat                     getDepthFormat() const;
   VkSampleCountFlagBits        getSampleCount() const;
   float                        getAspectRatio() const;
+  VkImageView                  getRenderImageView(uint32_t i = 0) const;
 
 private:
   /*--
@@ -129,6 +132,7 @@ private:
   struct Resources
   {
     std::vector<nvvk::Image>     gBufferColor{};      // Color attachments
+    std::vector<nvvk::Image>     gBufferColorMSAA{};
     nvvk::Image                  gBufferDepth{};      // Optional depth attachment
     std::vector<VkImageView>     uiImageViews{};      // Special views for ImGui (alpha=1)
     std::vector<VkDescriptorSet> uiDescriptorSets{};  // ImGui descriptor sets
