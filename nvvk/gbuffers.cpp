@@ -160,7 +160,7 @@ float nvvk::GBuffer::getAspectRatio() const
 VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
 {
   nvvk::DebugUtil&    dutil = nvvk::DebugUtil::getInstance();
-  const VkImageLayout layout{VK_IMAGE_LAYOUT_GENERAL};
+  const VkImageLayout layout{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
   VkDevice            device = m_info.allocator->getDevice();
   bool                isMsaa = m_info.sampleCount > VK_SAMPLE_COUNT_1_BIT;
 
@@ -175,7 +175,7 @@ VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
   for(uint32_t c = 0; c < numColor; c++)
   {
     // Color image and view
-    const VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT
+    const VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
                                     | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     VkImageCreateInfo info = {
         .sType       = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
