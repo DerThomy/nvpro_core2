@@ -212,7 +212,7 @@ VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
     {
       // Transient usage allows tile-based GPUs to not allocate backing memory if possible, 
       // but we need standard TRANSFER/ATTACHMENT bits for clears and resolves.
-      const VkImageUsageFlags msaaUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // DST for Clear
+      const VkImageUsageFlags msaaUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
       
       info.samples = m_info.sampleCount;
       info.usage   = msaaUsage;
@@ -248,105 +248,18 @@ VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
     dutil.setObjectName(m_res.gBufferDepth.descriptor.imageView, "G-Depth");
   }
 
-  {  // Clear all images and change layout
-    std::vector<VkImageMemoryBarrier2> barriers;
-
-    const VkClearColorValue                      clear_value = {{0.F, 0.F, 0.F, 0.F}};
-    const std::array<VkImageSubresourceRange, 1> range       = {
-          {{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1}}};
-    const VkClearDepthStencilValue               clear_depth = {1.0f, 0};
-    const VkImageSubresourceRange                range_depth = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
-
-    for(uint32_t c = 0; c < numColor; c++)
+  // Set the image layout to the expected layout for the descriptor
+  for(uint32_t c = 0; c < numColor; c++)
+  {
+    m_res.gBufferColor[c].descriptor.imageLayout = layout;
+    if(isMsaa)
     {
-      barriers.push_back(nvvk::makeImageMemoryBarrier({
-          .image     = m_res.gBufferColor[c].image,
-          .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-          .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-      }));
-
-      // If MSAA exists, transition it too
-      if(isMsaa)
-      {
-         barriers.push_back(nvvk::makeImageMemoryBarrier({
-            .image     = m_res.gBufferColorMSAA[c].image,
-            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-         }));
-      }
+      m_res.gBufferColorMSAA[c].descriptor.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     }
-
-    if(m_res.gBufferDepth.image != VK_NULL_HANDLE)
-    {
-      barriers.push_back(nvvk::makeImageMemoryBarrier({
-          .image            = m_res.gBufferDepth.image,
-          .oldLayout        = VK_IMAGE_LAYOUT_UNDEFINED,
-          .newLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-          .subresourceRange = range_depth,
-      }));
-    }
-
-    const VkDependencyInfo depInfoClear{.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                                   .imageMemoryBarrierCount = (uint32_t)barriers.size(),
-                                   .pImageMemoryBarriers    = barriers.data()};
-    vkCmdPipelineBarrier2(cmd, &depInfoClear);
-    barriers.clear();
-
-    // Clear ALL images
-    for(uint32_t c = 0; c < numColor; c++)
-    {
-      vkCmdClearColorImage(cmd, m_res.gBufferColor[c].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_value, uint32_t(range.size()), range.data());
-
-      // 2. Clear MSAA Image (if exists)
-      if(isMsaa)
-      {
-        vkCmdClearColorImage(cmd, m_res.gBufferColorMSAA[c].image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_value, uint32_t(range.size()), range.data());
-      }
-    }
-
-    if(m_res.gBufferDepth.image != VK_NULL_HANDLE)
-    {
-      vkCmdClearDepthStencilImage(cmd, m_res.gBufferDepth.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_depth, 1, &range_depth);
-    }
-
-    // Transition to Final Layout
-    for(uint32_t c = 0; c < numColor; c++)
-    {
-      barriers.push_back(nvvk::makeImageMemoryBarrier({
-          .image     = m_res.gBufferColor[c].image,
-          .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-          .newLayout = layout 
-      }));
-      m_res.gBufferColor[c].descriptor.imageLayout = layout;
-
-      // 2. MSAA Image -> COLOR_ATTACHMENT_OPTIMAL (Ready for Rendering)
-      if(isMsaa)
-      {
-         barriers.push_back(nvvk::makeImageMemoryBarrier({
-            .image     = m_res.gBufferColorMSAA[c].image,
-            .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-         }));
-         // MSAA descriptor layout is less important as we rarely sample it, but let's keep it consistent
-         m_res.gBufferColorMSAA[c].descriptor.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; 
-      }
-    }
-
-    if(m_res.gBufferDepth.image != VK_NULL_HANDLE)
-    {
-      barriers.push_back(nvvk::makeImageMemoryBarrier({
-          .image            = m_res.gBufferDepth.image,
-          .oldLayout        = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-          .newLayout        = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-          .subresourceRange = range_depth,
-      }));
-      m_res.gBufferDepth.descriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    }
-
-    const VkDependencyInfo depInfoLayout{.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                                         .imageMemoryBarrierCount = (uint32_t)barriers.size(),
-                                         .pImageMemoryBarriers    = barriers.data()};
-    vkCmdPipelineBarrier2(cmd, &depInfoLayout);
+  }
+  if(m_res.gBufferDepth.image != VK_NULL_HANDLE)
+  {
+    m_res.gBufferDepth.descriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
   }
 
   // Descriptor Set for ImGUI
