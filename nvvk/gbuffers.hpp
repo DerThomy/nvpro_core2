@@ -40,6 +40,7 @@ struct GBufferInitInfo
   VkFormat                 depthFormat{VK_FORMAT_UNDEFINED};    // Depth buffer (VK_FORMAT_UNDEFINED for no depth)
   VkSampleCountFlagBits    sampleCount{VK_SAMPLE_COUNT_1_BIT};  // MSAA sample count (default: no MSAA)
   std::vector<VkImageUsageFlags> colorImageUsages{};            // Optional: Usage flags for each color attachment
+  VkImageUsageFlags        depthImageUsage{VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT}; // Optional: Usage flags for depth
   VkSampler                imageSampler{};                      // Linear sampler for displaying the images (ImGui)
   VkDescriptorPool         descriptorPool{};                    // Pool for the ImGui descriptors
 };
