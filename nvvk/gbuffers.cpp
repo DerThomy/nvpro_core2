@@ -163,6 +163,22 @@ VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
   const VkImageLayout layout{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
   VkDevice            device = m_info.allocator->getDevice();
   bool                isMsaa = m_info.sampleCount > VK_SAMPLE_COUNT_1_BIT;
+  bool                lazyAllocationSupported = false;
+
+  if(isMsaa)
+  {
+    VkPhysicalDeviceMemoryProperties memProps;
+    vkGetPhysicalDeviceMemoryProperties(m_info.allocator->getPhysicalDevice(), &memProps);
+    for(uint32_t i = 0; i < memProps.memoryTypeCount; i++)
+    {
+      if((memProps.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) != 0)
+      {
+        printf("LAZILY_ALLOCATED_BIT is supported\n");
+        lazyAllocationSupported = true;
+        break;
+      }
+    }
+  }
 
   const auto numColor = static_cast<uint32_t>(m_info.colorFormats.size());
 
@@ -210,14 +226,15 @@ VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
     m_res.gBufferColor[c].descriptor.sampler = m_info.imageSampler;
     if(isMsaa)
     {
-      // Transient usage allows tile-based GPUs to not allocate backing memory if possible, 
-      // but we need standard TRANSFER/ATTACHMENT bits for clears and resolves.
+      // Transient usage allows tile-based GPUs to not allocate backing memory if possible.
       const VkImageUsageFlags msaaUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
       
       info.samples = m_info.sampleCount;
       info.usage   = msaaUsage;
       
-      NVVK_FAIL_RETURN(m_info.allocator->createImage(m_res.gBufferColorMSAA[c], info, viewInfo));
+      NVVK_FAIL_RETURN(m_info.allocator->createImage(m_res.gBufferColorMSAA[c], info, viewInfo,
+                                                     {.usage = lazyAllocationSupported ? VMA_MEMORY_USAGE_GPU_LAZILY_ALLOCATED :
+                                                                                         VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE}));
       dutil.setObjectName(m_res.gBufferColorMSAA[c].image, "G-Color-MSAA-" + std::to_string(c));
       dutil.setObjectName(m_res.gBufferColorMSAA[c].descriptor.imageView, "G-Color-MSAA-" + std::to_string(c));
     }
