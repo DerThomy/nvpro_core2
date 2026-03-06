@@ -5,7 +5,7 @@ find_package(OpenGL)
 
 set(PLATFORM_LIBRARIES)
 
-if(UNIX)
+if(UNIX AND NOT ANDROID)
   find_package(X11 REQUIRED)
   LIST(APPEND PLATFORM_LIBRARIES ${X11_LIBRARIES})
 endif()

@@ -171,11 +171,13 @@ function(copy_to_runtime_and_install TARGET_NAME)
                 DESTINATION ${COPY_INSTALL_DIR}
             )
         else()
-            # Although TARGET_RUNTIME_DLLS isn't available, we can do this:
-            install(TARGETS ${TARGET_NAME}
-                    RUNTIME_DEPENDENCIES
-                        POST_EXCLUDE_REGEXES "^/lib" "^/usr/lib"
-                    DESTINATION ${COPY_INSTALL_DIR})
+            if(NOT CMAKE_CROSSCOMPILING)
+                # Although TARGET_RUNTIME_DLLS isn't available, we can do this:
+                install(TARGETS ${TARGET_NAME}
+                        RUNTIME_DEPENDENCIES
+                            POST_EXCLUDE_REGEXES "^/lib" "^/usr/lib"
+                        DESTINATION ${COPY_INSTALL_DIR})
+            endif()
         endif()
     endif()
 endfunction()

@@ -18,8 +18,10 @@
  */
 
 
+#ifndef ANDROID
 #include <GLFW/glfw3.h>
 #undef APIENTRY
+#endif
 
 #include <nvutils/file_operations.hpp>
 #include <nvutils/logger.hpp>
@@ -42,6 +44,9 @@ void nvapp::ElementDefaultWindowTitle::onAttach(nvapp::Application* app)
 
 void nvapp::ElementDefaultWindowTitle::onUIRender()
 {
+#ifdef ANDROID
+  return;
+#else
   GLFWwindow* window = m_app->getWindowHandle();
   if(window == nullptr)  // This can happen in headless mode
   {
@@ -68,6 +73,7 @@ void nvapp::ElementDefaultWindowTitle::onUIRender()
     glfwSetWindowTitle(m_app->getWindowHandle(), title.c_str());
     m_dirtyTimer = 0;
   }
+#endif
 }
 
 void nvapp::ElementDefaultWindowTitle::setPrefix(const std::string& str)

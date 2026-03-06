@@ -24,10 +24,22 @@
 
 // The API
 
+#ifndef ANDROID
 struct GLFWwindow;
+#endif
 
 namespace nvgui {
 
+#ifdef ANDROID
+// opens a file chooser dialog and returns the path to the selected file
+inline std::filesystem::path windowOpenFileDialog(void* win, const char* title, const char* exts) {return {};};
+// opens a file chooser dialog with an initial directory and returns the path to the selected file, and initialDir is updated to the directory of the selected file
+inline std::filesystem::path windowOpenFileDialog(void* win, const char* title, const char* exts, std::filesystem::path& initialDir) {return {};};
+// opens a file save dialog and returns the path to the saved file
+inline std::filesystem::path windowSaveFileDialog(void* win, const char* title, const char* exts) {return {};};
+// opens a folder chooser dialog and returns the path to the selected directory
+inline std::filesystem::path windowOpenFolderDialog(void* win, const char* title) {return {};};
+#else
 // opens a file chooser dialog and returns the path to the selected file
 std::filesystem::path windowOpenFileDialog(GLFWwindow* glfwin, const char* title, const char* exts);
 // opens a file chooser dialog with an initial directory and returns the path to the selected file, and initialDir is updated to the directory of the selected file
@@ -36,5 +48,6 @@ std::filesystem::path windowOpenFileDialog(GLFWwindow* glfwin, const char* title
 std::filesystem::path windowSaveFileDialog(GLFWwindow* glfwin, const char* title, const char* exts);
 // opens a folder chooser dialog and returns the path to the selected directory
 std::filesystem::path windowOpenFolderDialog(struct GLFWwindow* glfwin, const char* title);
+#endif
 
 };  // namespace nvgui

@@ -24,8 +24,10 @@
 #include <iomanip>
 #include <regex>
 
+#ifndef ANDROID
 #include <GLFW/glfw3.h>
 #undef APIENTRY
+#endif
 
 #include <glm/glm.hpp>
 #include <glm/detail/type_half.hpp>
@@ -881,6 +883,9 @@ public:
 
   void requestFullSnapshotSave()
   {
+#ifdef ANDROID
+    LOGW("File saving not supported on Android");
+#else
     std::filesystem::path filename = nvgui::windowSaveFileDialog(m_app->getWindowHandle(), "Save CSV", "csv (.csv)|*.csv");
     if(filename.empty())
     {
@@ -909,6 +914,7 @@ public:
 
     setSnapshotFileNames(m_inspectedCustomVariables, stem);
     setSnapshotFileNames(m_inspectedCustomVariablesCopies, stem);
+#endif
   }
 
 
@@ -1151,6 +1157,9 @@ void imguiCopy(nvapp::Application* app, T& src, const std::vector<T>& existingOr
   ImGui::SameLine();
   if(ImGui::Button(fmt::format("{}###SnapshotSaveToFile{}", ICON_MS_INSERT_DRIVE_FILE, src.name).c_str()))
   {
+#ifdef ANDROID
+    LOGW("File saving not supported on Android");
+#else
     if(src.snapshotFileName.empty())
     {
       src.snapshotFileName = nvgui::windowSaveFileDialog(app->getWindowHandle(), "Save CSV", "CSV(.csv)|*.csv");
@@ -1164,6 +1173,7 @@ void imguiCopy(nvapp::Application* app, T& src, const std::vector<T>& existingOr
 
       src.saveSnapshotToFileRequested = true;
     }
+#endif
   }
   tooltip("Save the snapshot values to file");
 

@@ -38,36 +38,116 @@
 #include "file_operations.hpp"
 #include "logger.hpp"
 
+#ifdef __ANDROID__
+#include <android/asset_manager.h>
+static AAssetManager* g_assetManager = nullptr;
+void nvutils::setAndroidAssetManager(void* manager) {
+    g_assetManager = (AAssetManager*)manager;
+}
+#include <android/log.h>
+#define LOG_TAG "VKGaussianSplatting"
+#define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#define ALOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
+#define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#else
+#define ALOGE(...)
+#define ALOGW(...)
+#define ALOGI(...)
+#endif
+
 #include <fstream>
 #include <limits>
 #include <tuple>
 
-
-std::filesystem::path nvutils::findFile(const std::filesystem::path&              filename,
-                                        const std::vector<std::filesystem::path>& searchPaths,
-                                        bool                                      reportError)
-{
-  for(const auto& path : searchPaths)
-  {
-    const std::filesystem::path filePath = path / filename;
-    if(std::filesystem::exists(filePath))
-    {
-      return filePath;
+#ifdef __ANDROID__
+static std::string getAndroidAssetPath(const std::filesystem::path& path) {
+    std::string assetPath = path.string();
+    std::replace(assetPath.begin(), assetPath.end(), '\\', '/');
+    // Remove leading "./"
+    if (assetPath.size() >= 2 && assetPath[0] == '.' && assetPath[1] == '/') {
+        assetPath.erase(0, 2);
     }
-  }
-  nvutils::Logger::getInstance().log(reportError ? nvutils::Logger::LogLevel::eERROR : nvutils::Logger::LogLevel::eWARNING,
-                                     "File not found: %s\n", utf8FromPath(filename).c_str());
-  LOGI("Searched under: \n");
-  for(const auto& path : searchPaths)
-  {
-    LOGI("  %s\n", utf8FromPath(path).c_str());
-  }
-  return std::filesystem::path();
+    // Remove leading "/"
+    while (!assetPath.empty() && assetPath[0] == '/') {
+        assetPath.erase(0, 1);
+    }
+    return assetPath;
+}
+#endif
+
+std::filesystem::path nvutils::findFile(const std::filesystem::path& filename,
+                                        const std::vector<std::filesystem::path>& searchPaths,
+                                        bool reportError)
+{
+    for(const auto& path : searchPaths)
+    {
+        // lexically_normal cleans up any redundant "./" or "../" in the path
+        std::filesystem::path filePath = (path / filename).lexically_normal();
+        
+        if(std::filesystem::exists(filePath))
+        {
+            return filePath;
+        }
+
+#ifdef __ANDROID__
+        if (g_assetManager && filePath.is_relative()) {
+          // Use getAndroidAssetPath to ensure consistency with loadFile
+          std::string assetPath = getAndroidAssetPath(path / filename);
+            ALOGI("findFile: checking asset '%s'", assetPath.c_str());
+            AAsset* asset = AAssetManager_open(g_assetManager, assetPath.c_str(), AASSET_MODE_UNKNOWN);
+            if (asset) {
+                AAsset_close(asset);
+                return filePath; // WARNING: Ensure caller knows how to read this!
+            }
+        }
+#endif
+    }
+
+#ifdef __ANDROID__
+    // Fallback: check if the exact filename passed exists as an asset
+    if (g_assetManager) {
+        std::string assetPath = getAndroidAssetPath(filename);
+        
+        ALOGI("findFile: checking asset '%s'", assetPath.c_str());
+        AAsset* asset = AAssetManager_open(g_assetManager, assetPath.c_str(), AASSET_MODE_UNKNOWN);
+        if (asset) {
+            AAsset_close(asset);
+            return filename; 
+        } else {
+            ALOGW("findFile: failed to open asset '%s'", assetPath.c_str());
+        }
+    }
+#endif
+
+    nvutils::Logger::getInstance().log(reportError ? nvutils::Logger::LogLevel::eERROR : nvutils::Logger::LogLevel::eWARNING,
+                                       "File not found: %s\n", utf8FromPath(filename).c_str());
+    LOGI("Searched under: \n");
+    for(const auto& path : searchPaths)
+    {
+        LOGI("  %s\n", utf8FromPath(path).c_str());
+    }
+    
+    return std::filesystem::path();
 }
 
 
 std::string nvutils::loadFile(const std::filesystem::path& filePath)
 {
+#ifdef __ANDROID__
+  if (g_assetManager && filePath.is_relative()) {
+      std::string assetPath = getAndroidAssetPath(filePath);
+      AAsset* asset = AAssetManager_open(g_assetManager, assetPath.c_str(), AASSET_MODE_BUFFER);
+      if (asset) {
+          size_t size = AAsset_getLength(asset);
+          std::string buffer;
+          buffer.resize(size);
+          AAsset_read(asset, buffer.data(), size);
+          AAsset_close(asset);
+          return buffer;
+      }
+  }
+#endif
+
   std::ifstream file(filePath, std::ios::binary | std::ios::ate);
   if(!file)
   {

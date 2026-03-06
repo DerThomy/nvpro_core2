@@ -16,10 +16,13 @@ target_link_libraries(
   ${LIB_NAME} 
   PUBLIC 
     imgui
-    glfw   # for file_dialog
     fmt 
     glm
 )
+
+if(NOT ANDROID)
+  target_link_libraries(${LIB_NAME} PUBLIC glfw) # for file_dialog
+endif()
 
 target_precompile_headers(${LIB_NAME} PRIVATE
   <filesystem>

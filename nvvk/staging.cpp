@@ -97,16 +97,18 @@ VkResult StagingUploader::acquireStagingSpace(BufferRange& stagingSpace, size_t 
       .requiredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
   };
 
-  const VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
+  VkBufferUsageFlags2KHR usageFlags = VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT;
+
+  VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
       .sType = VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO,
-      .usage = VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+      .usage = usageFlags,
   };
 
-  const VkBufferCreateInfo bufferInfo{
+  VkBufferCreateInfo bufferInfo{
       .sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-      .pNext       = &bufferUsageFlags2CreateInfo,
+      .pNext       = m_resourceAllocator->usesMaintenance5() ? &bufferUsageFlags2CreateInfo : nullptr,
       .size        = dataSize,
-      .usage       = 0,
+      .usage       = m_resourceAllocator->usesMaintenance5() ? 0 : (VkBufferUsageFlags)usageFlags,
       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
   };
 

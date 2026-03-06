@@ -12,7 +12,7 @@ cmake_path(GET CMAKE_CURRENT_LIST_DIR PARENT_PATH PARENT_DIR)
 target_include_directories(${LIB_NAME} PUBLIC ${PARENT_DIR})
 
 # Check if TBB is present and add it (for parallel_batches)
-if(UNIX)
+if(UNIX AND NOT ANDROID)
   find_package(TBB)
   if(NOT TBB_FOUND)
     message(

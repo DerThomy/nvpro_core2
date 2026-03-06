@@ -36,7 +36,11 @@ function(compile_slang SHADER_FILES OUTPUT_DIR SHADER_HEADERS_VAR)
   # Set defaults for optional arguments
   set(TARGET_ENV ${COMPILE_SHADER_TARGET_ENV})
   if(NOT TARGET_ENV)
-    set(TARGET_ENV "vulkan1.4")
+    if (ANDROID)
+      set(TARGET_ENV "vulkan1.3")
+    else()
+      set(TARGET_ENV "vulkan1.4")
+    endif()
   endif()
   set(EXTRA_FLAGS ${COMPILE_SHADER_EXTRA_FLAGS})
 
@@ -59,7 +63,7 @@ function(compile_slang SHADER_FILES OUTPUT_DIR SHADER_HEADERS_VAR)
 
 
   set(_SLANG_FLAGS
-        -profile sm_6_6+spirv_1_6 # Target SM 6.6 and SPIR-V 1.6
+        -profile sm_6_6+spirv_1_5 # Target SM 6.6 and SPIR-V 1.6
         -capability spvInt64Atomics+spvShaderInvocationReorderNV+spvShaderClockKHR+spvRayTracingMotionBlurNV+spvRayQueryKHR+SPV_KHR_compute_shader_derivatives # Enable all capabilities
         -target spirv             # Target SPIR-V
         -emit-spirv-directly      # Emit SPIR-V directly without intermediate files
@@ -77,7 +81,7 @@ function(compile_slang SHADER_FILES OUTPUT_DIR SHADER_HEADERS_VAR)
       get_filename_component(SHADER_NAME ${SHADER} NAME)
       string(REPLACE "." "_" VN_SHADER_NAME ${SHADER_NAME})
       set(OUTPUT_FILE ${OUTPUT_DIR}/${SHADER_NAME})
-      if(UNIX)
+      if(UNIX AND NOT ANDROID)
           # Workaround: the Vulkan SDK sets LD_LIBRARY_PATH and
           # slangc may find a libslang.so there instead of its own
           set(_SLANGC env LD_LIBRARY_PATH= ${Slang_SLANGC_EXECUTABLE})

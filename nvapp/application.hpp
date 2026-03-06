@@ -109,7 +109,12 @@ Example:
 -------------------------------------------------------------------------------------------------*/
 
 // Forward declarations
+#ifdef ANDROID
+struct ANativeWindow;
+struct android_app;
+#else
 struct GLFWwindow;
+#endif
 
 namespace nvapp {
 // Forward declarations
@@ -165,6 +170,9 @@ struct ApplicationCreateInfo
   // VK_PRESENT_MODE_MAX_ENUM_KHR means no preference
   VkPresentModeKHR preferredVsyncOffMode = VK_PRESENT_MODE_MAX_ENUM_KHR;
   VkPresentModeKHR preferredVsyncOnMode  = VK_PRESENT_MODE_MAX_ENUM_KHR;
+#ifdef ANDROID
+  struct android_app* androidApp{nullptr};
+#endif
 };
 
 
@@ -215,7 +223,11 @@ public:
   inline VkDescriptorPool       getTextureDescriptorPool() const { return m_descriptorPool; }
   inline const VkExtent2D&      getViewportSize() const { return m_viewportSize; }
   inline const VkExtent2D&      getWindowSize() const { return m_windowSize; }
+#ifdef ANDROID
+  inline ANativeWindow*         getWindowHandle() const { return m_windowHandle; }
+#else
   inline GLFWwindow*            getWindowHandle() const { return m_windowHandle; }
+#endif
   inline uint32_t               getFrameCycleIndex() const { return m_frameRingCurrent; }
   inline uint32_t               getFrameCycleSize() const { return uint32_t(m_frameData.size()); }
 
@@ -231,7 +243,9 @@ public:
 
 
 private:
+#ifndef ANDROID
   void            initGlfw(ApplicationCreateInfo& info);
+#endif
   void            createTransientCommandPool();
   void            createFrameSubmission(uint32_t numFrames);
   void            createDescriptorPool();
@@ -294,7 +308,12 @@ private:
 
   FramePacer m_framePacer;  // Low-latency system
 
+#ifdef ANDROID
+  ANativeWindow* m_windowHandle{nullptr};
+  struct android_app* m_androidApp{nullptr};
+#else
   GLFWwindow* m_windowHandle{nullptr};  // GLFW Window
+#endif
   VkExtent2D  m_viewportSize{0, 0};     // Size of the viewport
   VkExtent2D  m_windowSize{0, 0};       // Size of the window
   float       m_dpiScale{1.f};          // Current scaling due to DPI.

@@ -147,7 +147,7 @@ public:
   void defaultTarget()
   {
     m_compilerOptions->SetTargetSpirv(shaderc_spirv_version::shaderc_spirv_version_1_6);
-    m_compilerOptions->SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_4);
+    m_compilerOptions->SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
   }
 
   // Sets the most typical compilation options. Note that without this, the

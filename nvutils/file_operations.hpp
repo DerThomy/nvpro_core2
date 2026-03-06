@@ -56,4 +56,8 @@ inline std::filesystem::path pathFromUtf8(const std::string& utf8) noexcept
 // For example, extensionMatches("foo.txt", ".txt") returns `true`.
 bool extensionMatches(const std::filesystem::path& path, const char* extension);
 
+#ifdef __ANDROID__
+void setAndroidAssetManager(void* manager);
+#endif
+
 }  // namespace nvutils

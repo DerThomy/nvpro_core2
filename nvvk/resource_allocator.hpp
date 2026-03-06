@@ -109,6 +109,7 @@ public:
   VkDevice         getDevice() const { return m_device; }
   VkPhysicalDevice getPhysicalDevice() const { return m_physicalDevice; }
   VkDeviceSize     getMaxMemoryAllocationSize() const { return m_maxMemoryAllocationSize; }
+  bool             usesMaintenance5() const { return m_usesMaintenance5; }
 
   //////////////////////////////////////////////////////////////////////////
 
@@ -254,6 +255,7 @@ private:
   VkDevice         m_device{};
   VkPhysicalDevice m_physicalDevice{};
   VkDeviceSize     m_maxMemoryAllocationSize = 0;
+  bool             m_usesMaintenance5 = false;
 
   // Each vma allocation is named using a global monotonic counter
   mutable std::atomic_uint32_t m_allocationCounter = 0;

@@ -36,6 +36,10 @@
 #include <nvutils/file_operations.hpp>
 #include "nvutils/spirv.hpp"
 
+#ifdef __ANDROID__
+struct AAssetManager;
+#endif
+
 //--------------------------------------------------------------------------------------------------
 // Slang Compiler
 //
@@ -78,7 +82,7 @@ public:
 
   // Compile a file or source
   bool compileFile(const std::filesystem::path& filename);
-  bool loadFromSourceString(const std::string& moduleName, const std::string& slangSource);
+  bool loadFromSourceString(const std::string& moduleName, const std::string& path, const std::string& slangSource);
 
   // Get result of the compilation
   const uint32_t* getSpirv() const;
@@ -101,6 +105,14 @@ public:
   // Multiple diagnostics are each separated by a single newline.
   const std::string& getLastDiagnosticMessage() const { return m_lastDiagnosticMessage; }
 
+#ifdef __ANDROID__
+  static void setAndroidAssetManager(void* manager)
+  {
+    g_assetManager = static_cast<AAssetManager*>(manager);
+  }
+#endif
+
+
 private:
   void createSession();
   void logAndAppendDiagnostics(slang::IBlob* diagnostic);
@@ -115,12 +127,17 @@ private:
   Slang::ComPtr<slang::IModule>             m_module;
   Slang::ComPtr<slang::IComponentType>      m_linkedProgram;
   Slang::ComPtr<ISlangBlob>                 m_spirv;
+  Slang::ComPtr<ISlangFileSystem>           m_fileSystem;
   std::vector<slang::PreprocessorMacroDesc> m_macros;
 
   std::function<void(const std::filesystem::path& sourceFile, const uint32_t* spirvCode, size_t spirvSize)> m_callback;
 
   // Store the last diagnostic message
   std::string m_lastDiagnosticMessage;
+
+#ifdef __ANDROID__
+  static AAssetManager* g_assetManager;
+#endif
 };
 
 }  // namespace nvslang

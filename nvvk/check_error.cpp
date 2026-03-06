@@ -23,7 +23,9 @@
 
 #include <cassert>
 #include <cstdlib>
+#ifndef ANDROID
 #include <vulkan/vk_enum_string_helper.h>  // For string_VkResult
+#endif
 
 namespace nvvk {
 
@@ -31,8 +33,13 @@ void CheckError::check(VkResult result, const char* expression, const char* file
 {
   if(result < 0)
   {
+#ifdef ANDROID
+    LOGE("Vulkan error: %d from %s:%d\n", (int)result, file, line);
+    const char* errMsg = "Error";
+#else
     const char* errMsg = string_VkResult(result);
     LOGE("Vulkan error: %s from %s:%d\n", errMsg, file, line);
+#endif
     if(m_callback)
     {
       m_callback(result);
@@ -46,8 +53,12 @@ VkResult CheckError::report(VkResult result, const char* expression, const char*
 {
   if(result < 0)
   {
+#ifdef ANDROID
+    LOGE("Vulkan error: %d from %s, %s:%d\n", (int)result, expression, file, line);
+#else
     const char* errMsg = string_VkResult(result);
     LOGE("Vulkan error: %s from %s, %s:%d\n", errMsg, expression, file, line);
+#endif
   }
   return result;
 }

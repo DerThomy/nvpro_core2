@@ -90,8 +90,19 @@ VkResult nvvk::Swapchain::initResources(VkExtent2D& outWindowSize, bool vSync)
   {
     m_maxFramesInFlight = std::min(m_maxFramesInFlight, capabilities2.surfaceCapabilities.maxImageCount);
   }
+  m_maxFramesInFlight = std::max(m_maxFramesInFlight, capabilities2.surfaceCapabilities.minImageCount);
   // Store the chosen image format
   m_imageFormat = surfaceFormat2.surfaceFormat.format;
+
+  VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+  if (capabilities2.surfaceCapabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR)
+      compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+  if (capabilities2.surfaceCapabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR)
+      compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
+  if (capabilities2.surfaceCapabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR)
+      compositeAlpha = VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR;
+  if (capabilities2.surfaceCapabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)
+      compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 
   // Create the swapchain itself
   const VkSwapchainCreateInfoKHR swapchainCreateInfo{
@@ -105,7 +116,7 @@ VkResult nvvk::Swapchain::initResources(VkExtent2D& outWindowSize, bool vSync)
       .imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
       .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
       .preTransform     = capabilities2.surfaceCapabilities.currentTransform,
-      .compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+      .compositeAlpha   = compositeAlpha,
       .presentMode      = presentMode,
       .clipped          = VK_TRUE,
   };

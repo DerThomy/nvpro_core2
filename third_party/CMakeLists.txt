@@ -18,7 +18,7 @@ if(NOT TARGET dxh)
 endif()
 
 # GLFW
-if(NOT TARGET glfw)
+if(NOT TARGET glfw AND NOT ANDROID)
   set(GLFW_USE_HYBRID_HPG ON)
   set(GLFW_VULKAN_STATIC OFF)
   set(GLFW_BUILD_DOCS OFF)
@@ -39,6 +39,13 @@ if(NOT TARGET volk)
     set(VOLK_DIR ${CMAKE_CURRENT_LIST_DIR}/volk)
     message(STATUS "Using fallback volk version")
   endif()
+
+  add_library(vulkan INTERFACE)
+  set(VULKAN_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vulkan/include)
+  target_sources(vulkan INTERFACE ${VULKAN_INCLUDE_DIR}/vulkan/vulkan.h)
+  target_include_directories(vulkan SYSTEM INTERFACE ${VULKAN_INCLUDE_DIR})
+  target_compile_definitions(vulkan INTERFACE VK_NO_PROTOTYPES)
+
   add_library(volk STATIC ${VOLK_DIR}/volk.h ${VOLK_DIR}/volk.c)
   add_library(volk::volk ALIAS volk)
   target_include_directories(volk PUBLIC ${VOLK_DIR} ${Vulkan_INCLUDE_DIRS})
@@ -46,6 +53,9 @@ if(NOT TARGET volk)
   # extension macros in vulkan.h.
   if(WIN32)
     target_compile_definitions(volk PUBLIC VK_USE_PLATFORM_WIN32_KHR NOMINMAX)
+  elseif(ANDROID)
+    target_compile_definitions(volk PUBLIC VK_USE_PLATFORM_ANDROID_KHR)
+    target_link_libraries(volk PUBLIC ${CMAKE_DL_LIBS})
   else()
     target_link_libraries(volk PUBLIC ${CMAKE_DL_LIBS})
     target_compile_definitions(
@@ -54,7 +64,7 @@ if(NOT TARGET volk)
   endif()
   # Define VK_NO_PROTOTYPES to avoid including Vulkan prototypes
   # This is necessary because we are using volk to load Vulkan functions
-  target_compile_definitions(volk PUBLIC VK_NO_PROTOTYPES)
+  target_link_libraries(volk PUBLIC vulkan)
 
   set_property(TARGET volk PROPERTY FOLDER "ThirdParty")
 endif()
@@ -75,8 +85,6 @@ if(NOT TARGET imgui)
       "${IMGUI_DIR}/imstb_textedit.h"
       "${IMGUI_DIR}/imstb_truetype.h"
       # For GLFW, Vulkan, and Volk:
-      "${IMGUI_DIR}/backends/imgui_impl_glfw.h"
-      "${IMGUI_DIR}/backends/imgui_impl_glfw.cpp"
       "${IMGUI_DIR}/backends/imgui_impl_vulkan.h"
       "${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp"
       "${IMGUI_DIR}/backends/imgui_impl_opengl3_loader.h"
@@ -84,13 +92,29 @@ if(NOT TARGET imgui)
       "${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
   )
 
+  if(ANDROID)
+    list(APPEND IMGUI_FILES
+      "${IMGUI_DIR}/backends/imgui_impl_android.h"
+      "${IMGUI_DIR}/backends/imgui_impl_android.cpp"
+    )
+  else()
+    list(APPEND IMGUI_FILES
+      "${IMGUI_DIR}/backends/imgui_impl_glfw.h"
+      "${IMGUI_DIR}/backends/imgui_impl_glfw.cpp"
+    )
+  endif()
+
   add_library(imgui STATIC ${IMGUI_FILES})
   target_include_directories(imgui PUBLIC 
     ${IMGUI_DIR} # for those, such as implot, including as <imgui.h>
     ${CMAKE_CURRENT_SOURCE_DIR}) # for those including as <imgui/imgui.h>
 
   # Link against GLFW and Volk
-  target_link_libraries(imgui PUBLIC glfw volk)
+  if(ANDROID)
+    target_link_libraries(imgui PUBLIC volk)
+  else()
+    target_link_libraries(imgui PUBLIC glfw volk)
+  endif()
   # Mandatory for Imgui to work with Volk
   target_compile_definitions(imgui PRIVATE IMGUI_IMPL_VULKAN_USE_VOLK)
 

@@ -219,4 +219,7 @@ private:
 #endif  // defined(NVLOGGER_ENABLE_FMT) && !defined(__CUDACC__)
 
 
+typedef void (*nvprintCallback)(int level, const char* fmt);
+void nvprintSetCallback(nvprintCallback callback);
+
 #endif  // LOGGER_HPP

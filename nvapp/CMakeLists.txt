@@ -18,13 +18,24 @@ target_link_libraries(
     nvutils
     nvvk
     nvgui
-    glfw   # Windowing library (Application needs it)
     glm    # Math library
     vma    # Vulkan Memory Allocator
     imgui  # Because GBuffer needs it (returns the ImTexture and uses ImGui_ImplVulkan_AddTexture
     implot # For Implot
     fmt    # For formatting strings
 )
+
+if(ANDROID)
+  # if(NOT TARGET native_app_glue)
+  #   add_library(native_app_glue STATIC
+  #     ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
+  #   target_include_directories(native_app_glue PUBLIC
+  #     ${ANDROID_NDK}/sources/android/native_app_glue)
+  # endif()
+  target_link_libraries(${LIB_NAME} PUBLIC android log volk native_app_glue)
+else()
+  target_link_libraries(${LIB_NAME} PUBLIC glfw)
+endif()
 
 target_precompile_headers(${LIB_NAME} PRIVATE
   <filesystem>

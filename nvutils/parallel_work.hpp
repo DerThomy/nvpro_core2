@@ -22,6 +22,7 @@
 
 #include "BS_thread_pool.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <execution>
 #include <functional>
@@ -200,7 +201,11 @@ inline void parallel_batches(uint64_t numItems, F&& fn, uint32_t numThreads = 0)
     };
 
     iota_view<uint64_t> batches(0, numBatches);
+#ifdef __ANDROID__
+    std::for_each(batches.begin(), batches.end(), worker);
+#else
     std::for_each(std::execution::par_unseq, batches.begin(), batches.end(), worker);
+#endif
   }
 }
 

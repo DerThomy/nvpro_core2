@@ -21,7 +21,9 @@
 
 #include <nvvk/check_error.hpp>
 
+#ifndef ANDROID
 #include <GLFW/glfw3.h>
+#endif
 #include <volk/volk.h>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -49,6 +51,9 @@ double getMonitorsMinRefreshRate()
   // rounded down, across monitors. We take the minimum to avoid building up
   // frame latency.
   double refreshRate = std::numeric_limits<double>::infinity();
+#ifdef ANDROID
+  refreshRate = 60.0;
+#else
   {
     int           numMonitors = 0;
     GLFWmonitor** monitors    = glfwGetMonitors(&numMonitors);
@@ -61,6 +66,7 @@ double getMonitorsMinRefreshRate()
       }
     }
   }
+#endif
   // If we have no information about the frame rate or an impossible value,
   // use a default.
   if(std::isinf(refreshRate) || refreshRate <= 0.0)

@@ -25,13 +25,31 @@
 #include <unordered_set>
 
 #include <volk.h>
+#ifndef ANDROID
 #include <vulkan/vk_enum_string_helper.h>
+#endif
 #include <nvutils/logger.hpp>
 #include <nvutils/timers.hpp>
 
 #include "check_error.hpp"
 #include "debug_util.hpp"
 #include "context.hpp"
+
+#ifdef ANDROID
+#include <android/log.h>
+#ifdef LOGE
+#undef LOGE
+#endif
+#define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "VKGaussianSplatting", __VA_ARGS__))
+#ifdef LOGW
+#undef LOGW
+#endif
+#define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "VKGaussianSplatting", __VA_ARGS__))
+#ifdef LOGI
+#undef LOGI
+#endif
+#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "VKGaussianSplatting", __VA_ARGS__))
+#endif
 
 //--------------------------------------------------------------------------------------------------
 // CATCHING VULKAN ERRORS
@@ -49,9 +67,17 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL VkContextDebugReport(VkDebugUtilsMessageSe
   const char* levelString = (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0   ? "Error" :
                             (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0 ? "Warning" :
                                                                                                        "Info";
-
+#ifdef ANDROID
+  if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0)
+    LOGE("Validation %s: [ %s ] | MessageID = 0x%x\n%s\n", levelString, callbackData->pMessageIdName, callbackData->messageIdNumber, callbackData->pMessage);
+  else if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0)
+    LOGW("Validation %s: [ %s ] | MessageID = 0x%x\n%s\n", levelString, callbackData->pMessageIdName, callbackData->messageIdNumber, callbackData->pMessage);
+  else
+    LOGI("Validation %s: [ %s ] | MessageID = 0x%x\n%s\n", levelString, callbackData->pMessageIdName, callbackData->messageIdNumber, callbackData->pMessage);
+#else
   nvutils::Logger::getInstance().log(level, "Validation %s: [ %s ] | MessageID = 0x%x\n%s\n", levelString,
                                      callbackData->pMessageIdName, callbackData->messageIdNumber, callbackData->pMessage);
+#endif
   return VK_FALSE;
 }
 
@@ -66,7 +92,12 @@ VkResult nvvk::Context::init(const ContextInitInfo& contextInitInfo)
   contextInfo = contextInitInfo;
 
   // Initialize the Vulkan loader
-  NVVK_FAIL_RETURN(volkInitialize());
+  VkResult result = volkInitialize();
+  if(result != VK_SUCCESS)
+  {
+    LOGE("volkInitialize failed: %d", result);
+    return result;
+  }
 
   {
     nvutils::ScopedTimer st("Creating Vulkan Context");
@@ -152,10 +183,17 @@ VkResult nvvk::Context::createInstance()
   {
     // Since the debug utils aren't available yet and this is usually the first
     // place an app can fail, we should print some additional help here.
+#ifdef ANDROID
+    LOGE(
+        "vkCreateInstance failed with error %d!\n"
+        "You may need to install a newer Vulkan SDK, or check that it is properly installed.\n",
+        (int)result);
+#else
     LOGE(
         "vkCreateInstance failed with error %s!\n"
         "You may need to install a newer Vulkan SDK, or check that it is properly installed.\n",
         string_VkResult(result));
+#endif
     return result;
   }
   // Loading Vulkan functions
@@ -345,7 +383,11 @@ VkResult nvvk::Context::createDevice()
   const VkResult result = vkCreateDevice(m_physicalDevice, &createInfo, contextInfo.alloc, &m_device);
   if(VK_SUCCESS != result)
   {
+#ifdef ANDROID
+    LOGE("vkCreateDevice failed with error %d!", (int)result);
+#else
     LOGE("vkCreateDevice failed with error %s!", string_VkResult(result));
+#endif
     return result;
   }
   volkLoadDevice(m_device);
@@ -492,9 +534,16 @@ bool nvvk::Context::filterAvailableExtensions(const std::vector<VkExtensionPrope
       }
       if(desiredExtension.required)
         allFound = false;
+#ifdef ANDROID
+      if(desiredExtension.required)
+        LOGE("Extension not available: %s %s\n", desiredExtension.extensionName, versionInfo.c_str());
+      else
+        LOGW("Optional extension not available: %s %s\n", desiredExtension.extensionName, versionInfo.c_str());
+#else
       nvutils::Logger::getInstance().log(
           desiredExtension.required ? nvutils::Logger::LogLevel::eERROR : nvutils::Logger::LogLevel::eWARNING,
           "Extension not available: %s %s\n", desiredExtension.extensionName, versionInfo.c_str());
+#endif
     }
   }
 

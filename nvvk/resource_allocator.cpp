@@ -71,12 +71,12 @@ nvvk::ResourceAllocator::operator VmaAllocator() const
 VkResult nvvk::ResourceAllocator::init(VmaAllocatorCreateInfo allocatorInfo)
 {
   assert(m_allocator == nullptr);
+  m_usesMaintenance5 = false;
 
   // #TODO : VK_EXT_memory_priority ? VMA_ALLOCATOR_CREATE_EXT_MEMORY_PRIORITY_BIT
 
   allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;  // allow querying for the GPU address of a buffer
   allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_KHR_MAINTENANCE4_BIT;
-  allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_KHR_MAINTENANCE5_BIT;  // allow using VkBufferUsageFlags2CreateInfoKHR
 
   VkPhysicalDeviceVulkan11Properties props11{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES,
@@ -98,6 +98,19 @@ VkResult nvvk::ResourceAllocator::init(VmaAllocatorCreateInfo allocatorInfo)
       .vkGetDeviceProcAddr   = vkGetDeviceProcAddr,
   };
   allocatorInfo.pVulkanFunctions = &functions;
+
+  if (allocatorInfo.flags & VMA_ALLOCATOR_CREATE_KHR_MAINTENANCE5_BIT)
+  {
+      if (vkGetDeviceProcAddr(m_device, "vkCmdBindIndexBuffer2KHR") != nullptr)
+      {
+          m_usesMaintenance5 = true;
+      }
+      else
+      {
+          allocatorInfo.flags &= ~VMA_ALLOCATOR_CREATE_KHR_MAINTENANCE5_BIT;
+      }
+  }
+
   return vmaCreateAllocator(&allocatorInfo, &m_allocator);
 }
 
@@ -111,6 +124,7 @@ void nvvk::ResourceAllocator::deinit()
   m_device         = nullptr;
   m_physicalDevice = nullptr;
   m_leakID         = ~0;
+  m_usesMaintenance5 = false;
 }
 
 void nvvk::ResourceAllocator::addLeakDetection(VmaAllocation allocation) const
@@ -138,16 +152,18 @@ VkResult nvvk::ResourceAllocator::createBuffer(nvvk::Buffer&             buffer,
                                                VkDeviceSize              minAlignment,
                                                std::span<const uint32_t> queueFamilies) const
 {
-  const VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
+  VkBufferUsageFlags2KHR finalUsage = usage | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT;
+
+  VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
       .sType = VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO,
-      .usage = usage | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+      .usage = finalUsage,
   };
 
-  const VkBufferCreateInfo bufferInfo{
+  VkBufferCreateInfo bufferInfo{
       .sType                 = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-      .pNext                 = &bufferUsageFlags2CreateInfo,
+      .pNext                 = (m_usesMaintenance5 && finalUsage > UINT32_MAX) ? &bufferUsageFlags2CreateInfo : nullptr,
       .size                  = size,
-      .usage                 = 0,
+      .usage                 = (m_usesMaintenance5 && finalUsage > UINT32_MAX) ? 0 : (VkBufferUsageFlags)finalUsage,
       .sharingMode           = queueFamilies.empty() ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT,
       .queueFamilyIndexCount = static_cast<uint32_t>(queueFamilies.size()),
       .pQueueFamilyIndices   = queueFamilies.data(),
@@ -351,16 +367,18 @@ VkResult nvvk::ResourceAllocator::createLargeBuffer(LargeBuffer&           large
                                                     VkDeviceSize              minAlignment /*= 0*/,
                                                     std::span<const uint32_t> queueFamilies /*= {}*/) const
 {
-  const VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
+  VkBufferUsageFlags2KHR finalUsage = usage | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT;
+
+  VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
       .sType = VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO,
-      .usage = usage | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+      .usage = finalUsage,
   };
 
-  const VkBufferCreateInfo bufferInfo{
+  VkBufferCreateInfo bufferInfo{
       .sType                 = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-      .pNext                 = &bufferUsageFlags2CreateInfo,
+      .pNext                 = (m_usesMaintenance5 && finalUsage > UINT32_MAX) ? &bufferUsageFlags2CreateInfo : nullptr,
       .size                  = size,
-      .usage                 = 0,
+      .usage                 = (m_usesMaintenance5 && finalUsage > UINT32_MAX) ? 0 : (VkBufferUsageFlags)finalUsage,
       .sharingMode           = queueFamilies.empty() ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT,
       .queueFamilyIndexCount = static_cast<uint32_t>(queueFamilies.size()),
       .pQueueFamilyIndices   = queueFamilies.data(),
@@ -460,16 +478,18 @@ VkResult nvvk::ResourceAllocator::createAcceleration(nvvk::AccelerationStructure
   resultAccel                                      = {};
   VkAccelerationStructureCreateInfoKHR accelStruct = accInfo;
 
-  const VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
+  VkBufferUsageFlags2KHR finalUsage = VK_BUFFER_USAGE_2_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
+
+  VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
       .sType = VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO,
-      .usage = VK_BUFFER_USAGE_2_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT,
+      .usage = finalUsage,
   };
 
-  const VkBufferCreateInfo bufferInfo{
+  VkBufferCreateInfo bufferInfo{
       .sType                 = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-      .pNext                 = &bufferUsageFlags2CreateInfo,
+      .pNext                 = (m_usesMaintenance5 && finalUsage > UINT32_MAX) ? &bufferUsageFlags2CreateInfo : nullptr,
       .size                  = accelStruct.size,
-      .usage                 = 0,
+      .usage                 = (m_usesMaintenance5 && finalUsage > UINT32_MAX) ? 0 : (VkBufferUsageFlags)finalUsage,
       .sharingMode           = queueFamilies.empty() ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT,
       .queueFamilyIndexCount = static_cast<uint32_t>(queueFamilies.size()),
       .pQueueFamilyIndices   = queueFamilies.data(),
@@ -529,17 +549,19 @@ VkResult nvvk::ResourceAllocator::createLargeAcceleration(LargeAccelerationStruc
   resultAccel                                      = {};
   VkAccelerationStructureCreateInfoKHR accelStruct = accInfo;
 
-  const VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
+  VkBufferUsageFlags2KHR finalUsage = VK_BUFFER_USAGE_2_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT_KHR;
+
+  VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
       .sType = VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO,
-      .usage = VK_BUFFER_USAGE_2_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT_KHR,
+      .usage = finalUsage,
   };
 
-  const VkBufferCreateInfo bufferInfo{
+  VkBufferCreateInfo bufferInfo{
       .sType                 = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-      .pNext                 = &bufferUsageFlags2CreateInfo,
+      .pNext                 = (m_usesMaintenance5 && finalUsage > UINT32_MAX) ? &bufferUsageFlags2CreateInfo : nullptr,
       .flags                 = VK_BUFFER_CREATE_SPARSE_BINDING_BIT,
       .size                  = accelStruct.size,
-      .usage                 = 0,
+      .usage                 = (m_usesMaintenance5 && finalUsage > UINT32_MAX) ? 0 : (VkBufferUsageFlags)finalUsage,
       .sharingMode           = queueFamilies.empty() ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT,
       .queueFamilyIndexCount = static_cast<uint32_t>(queueFamilies.size()),
       .pQueueFamilyIndices   = queueFamilies.data(),
@@ -659,15 +681,17 @@ VkResult nvvk::ResourceAllocatorExport::createBufferExport(Buffer&              
                                                            VkDeviceSize              minAlignment,
                                                            std::span<const uint32_t> queueFamilies)
 {
-  const VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
+  VkBufferUsageFlags2KHR finalUsage = usage | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT;
+
+  VkBufferUsageFlags2CreateInfo bufferUsageFlags2CreateInfo{
       .sType = VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO,
-      .usage = usage | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT,
+      .usage = finalUsage,
   };
 
   // Structure for buffer creation with export flag capability
-  const VkExternalMemoryBufferCreateInfo externalMemBufCreateInfo{
+  VkExternalMemoryBufferCreateInfo externalMemBufCreateInfo{
       .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO,
-      .pNext = &bufferUsageFlags2CreateInfo,
+      .pNext = (usesMaintenance5() && finalUsage > UINT32_MAX) ? &bufferUsageFlags2CreateInfo : nullptr,
 #ifdef _WIN32
       .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT,
 #else
@@ -676,11 +700,11 @@ VkResult nvvk::ResourceAllocatorExport::createBufferExport(Buffer&              
   };
 
   // Adding export flag capability to buffer create info
-  const VkBufferCreateInfo bufferInfo{
+  VkBufferCreateInfo bufferInfo{
       .sType                 = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
       .pNext                 = &externalMemBufCreateInfo,
       .size                  = size,
-      .usage                 = 0,
+      .usage                 = (usesMaintenance5() && finalUsage > UINT32_MAX) ? 0 : (VkBufferUsageFlags)finalUsage,
       .sharingMode           = queueFamilies.empty() ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT,
       .queueFamilyIndexCount = static_cast<uint32_t>(queueFamilies.size()),
       .pQueueFamilyIndices   = queueFamilies.data(),

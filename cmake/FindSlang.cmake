@@ -23,10 +23,15 @@
 #   ...
 # )
 
-set(Slang_VERSION "2025.13.1" CACHE STRING "Slang version. If you change this and ran CMake before, you will need to delete the other Slang_* cache variables")
+set(Slang_VERSION "2026.3.1" CACHE STRING "Slang version. If you change this and ran CMake before, you will need to delete the other Slang_* cache variables")
+
+if(ANDROID)
+  set(Slang_ROOT "${CMAKE_CURRENT_LIST_DIR}/../third_party/slang/build-android-arm64-v8a")
+endif()
 
 if(NOT Slang_ROOT)
-  string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" ARCH_PROC)
+  if(NOT ANDROID)
+    string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" ARCH_PROC)
   if(ARCH_PROC MATCHES "^(arm|aarch64)")
       if(WIN32)
           set(PACKMAN_ARCH "arm64")
@@ -79,53 +84,97 @@ if(NOT Slang_ROOT)
 
   set(Slang_ROOT ${Slang_SOURCE_DIR} CACHE PATH "Path to the Slang SDK root directory")
   mark_as_advanced(Slang_ROOT)
+  endif()
 endif()
 
+if(CMAKE_CROSSCOMPILING AND CMAKE_HOST_WIN32)
+  if(NOT Slang_HOST_ROOT)
+      set(HOST_SLANG_OS "windows")
+      set(HOST_PACKMAN_ARCH "x64")
+      set(HOST_GITHUB_ARCH "x86_64")
+
+      set(Slang_Host_URLS
+          "https://d4i3qtqj3r0z5.cloudfront.net/slang%40v${Slang_VERSION}-${HOST_SLANG_OS}-${HOST_PACKMAN_ARCH}-release.zip"
+          "https://github.com/shader-slang/slang/releases/download/v${Slang_VERSION}/slang-${Slang_VERSION}-${HOST_SLANG_OS}-${HOST_GITHUB_ARCH}.zip"
+      )
+
+      include(DownloadPackage)
+      download_package(
+        NAME "Slang-${HOST_SLANG_OS}-${HOST_GITHUB_ARCH}"
+        URLS ${Slang_Host_URLS}
+        VERSION ${Slang_VERSION}
+        LOCATION Slang_HOST_SOURCE_DIR
+      )
+      set(Slang_HOST_ROOT ${Slang_HOST_SOURCE_DIR} CACHE PATH "Path to the Host Slang SDK root directory")
+  endif()
+else()
+  set(Slang_HOST_ROOT ${Slang_ROOT})
+endif()
+
+set(_Slang_LIB_PATH_SUFFIXES lib Release/lib Debug/lib RelWithDebInfo/lib Release Debug RelWithDebInfo)
+set(_Slang_BIN_PATH_SUFFIXES bin lib Release/bin Release/lib Debug/bin Debug/lib RelWithDebInfo/bin RelWithDebInfo/lib Release Debug RelWithDebInfo)
+if(CMAKE_BUILD_TYPE)
+  list(INSERT _Slang_LIB_PATH_SUFFIXES 0 "${CMAKE_BUILD_TYPE}/lib" "${CMAKE_BUILD_TYPE}")
+  list(INSERT _Slang_BIN_PATH_SUFFIXES 0 "${CMAKE_BUILD_TYPE}/bin" "${CMAKE_BUILD_TYPE}/lib" "${CMAKE_BUILD_TYPE}")
+endif()
+
+if(NOT Slang_INCLUDE_DIR)
 find_path(Slang_INCLUDE_DIR
   slang.h
   HINTS ${Slang_ROOT}/include
+        "${CMAKE_CURRENT_LIST_DIR}/../third_party/slang/include"
   NO_DEFAULT_PATH
   DOC "Directory that includes slang.h."
+  NO_CMAKE_FIND_ROOT_PATH
 )
 mark_as_advanced(Slang_INCLUDE_DIR)
+endif()
 
 find_program(Slang_SLANGC_EXECUTABLE
   NAMES slangc 
-  HINTS ${Slang_ROOT}/bin
+  HINTS ${Slang_HOST_ROOT}/bin
   NO_DEFAULT_PATH
   DOC "Slang compiler (slangc)"
+  NO_CMAKE_FIND_ROOT_PATH
 )
 mark_as_advanced(Slang_SLANGC_EXECUTABLE)
 
 find_program(Slang_SLANGD_EXECUTABLE
   NAMES slangd
-  HINTS ${Slang_ROOT}/bin
+  HINTS ${Slang_HOST_ROOT}/bin
   NO_DEFAULT_PATH
   DOC "Slang language server (slangd)"
+  NO_CMAKE_FIND_ROOT_PATH
 )
 mark_as_advanced(Slang_SLANGD_EXECUTABLE)
 
+if(NOT Slang_LIBRARY)
 find_library(Slang_LIBRARY
-  NAMES slang
-  HINTS ${Slang_ROOT}/lib
+  NAMES slang-compiler slang
+  HINTS ${Slang_ROOT}/lib ${Slang_ROOT}
+  PATH_SUFFIXES ${_Slang_LIB_PATH_SUFFIXES}
   NO_DEFAULT_PATH
   DOC "Slang linker library"
+  NO_CMAKE_FIND_ROOT_PATH
 )
 mark_as_advanced(Slang_LIBRARY)
 
 if(WIN32)
   find_file(Slang_DLL
-    NAMES slang.dll
+    NAMES slang-compiler.dll slang.dll
     HINTS ${Slang_ROOT}/bin
     NO_DEFAULT_PATH
     DOC "Slang shared library (.dll)"
+    NO_CMAKE_FIND_ROOT_PATH
   )
 else() # Unix; uses .so
   set(Slang_DLL ${Slang_LIBRARY} CACHE PATH "Slang shared library (.so)")
 endif()
 mark_as_advanced(Slang_DLL)
+endif()
 
 # CMake Import library
+if(Slang_LIBRARY AND NOT TARGET Slang)
 if(NOT TARGET Slang)
   add_library(Slang SHARED IMPORTED)
   set_target_properties(Slang PROPERTIES
@@ -148,6 +197,7 @@ if(NOT TARGET Slang)
     )
   endif()
 endif()
+endif()
 
 # If we want to use Slang with .enableGLSL = true, then we should copy the Slang
 # GLSL module to the output directory as well. Otherwise, Slang might use the
@@ -156,11 +206,16 @@ endif()
 # To make this work, we make the GLSL module an IMPORTED library, with the same
 # IMPLIB as core Slang.
 find_file(Slang_GLSL_MODULE
-  NAMES ${CMAKE_SHARED_LIBRARY_PREFIX}slang-glsl-module${CMAKE_SHARED_LIBRARY_SUFFIX}
+  NAMES ${CMAKE_SHARED_LIBRARY_PREFIX}slang-glsl-module-${Slang_VERSION}${CMAKE_SHARED_LIBRARY_SUFFIX}
+        ${CMAKE_SHARED_LIBRARY_PREFIX}slang-glsl-module${CMAKE_SHARED_LIBRARY_SUFFIX}
   HINTS ${Slang_ROOT}/bin
         ${Slang_ROOT}/lib
+        ${Slang_ROOT}/${CMAKE_BUILD_TYPE}/bin
+        ${Slang_ROOT}/${CMAKE_BUILD_TYPE}/lib
+  PATH_SUFFIXES ${_Slang_BIN_PATH_SUFFIXES}
   NO_DEFAULT_PATH
   DOC "Slang embedded GLSL module"
+  NO_CMAKE_FIND_ROOT_PATH
 )
 mark_as_advanced(Slang_GLSL_MODULE)
 
@@ -178,11 +233,16 @@ endif()
 # Additionally, SLANG_OPTIMIZATION_LEVEL_HIGH requires slang-glslang.dll.
 # Find it:
 find_file(Slang_GLSLANG
-  NAMES ${CMAKE_SHARED_LIBRARY_PREFIX}slang-glslang${CMAKE_SHARED_LIBRARY_SUFFIX}
+  NAMES ${CMAKE_SHARED_LIBRARY_PREFIX}slang-glslang-${Slang_VERSION}${CMAKE_SHARED_LIBRARY_SUFFIX}
+        ${CMAKE_SHARED_LIBRARY_PREFIX}slang-glslang${CMAKE_SHARED_LIBRARY_SUFFIX}
   HINTS ${Slang_ROOT}/bin
         ${Slang_ROOT}/lib
+        ${Slang_ROOT}/${CMAKE_BUILD_TYPE}/bin
+        ${Slang_ROOT}/${CMAKE_BUILD_TYPE}/lib
+  PATH_SUFFIXES ${_Slang_BIN_PATH_SUFFIXES}
   NO_DEFAULT_PATH
   DOC "slang-glslang shared library"
+  NO_CMAKE_FIND_ROOT_PATH
 )
 mark_as_advanced(Slang_GLSLANG)
 
@@ -198,12 +258,12 @@ if(NOT TARGET SlangGlslang)
 endif()
 
 
-message(STATUS "--> using SLANGC under: ${Slang_SLANGC_EXECUTABLE}")
+message(WARNING "--> using SLANGC under: ${Slang_SLANGC_EXECUTABLE}")
+message(WARNING "--> using SLANG LIB: ${Slang_LIBRARY}")
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(Slang
   REQUIRED_VARS
-    Slang_ROOT
     Slang_SLANGC_EXECUTABLE
     Slang_LIBRARY
     Slang_DLL

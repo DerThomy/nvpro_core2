@@ -18,7 +18,7 @@
  */
 //--------------------------------------------------------------------
 
-#ifdef __unix__
+#if defined(__unix__) && !defined(ANDROID) && !defined(__ANDROID__)
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>

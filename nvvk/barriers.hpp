@@ -23,7 +23,7 @@
 #include <tuple>
 #include <cassert>
 
-#include <vulkan/vulkan_core.h>
+#include <volk/volk.h>
 
 #include "resources.hpp"
 

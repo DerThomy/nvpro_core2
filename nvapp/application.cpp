@@ -19,13 +19,22 @@
 
 #include <array>
 #include <filesystem>
+#include <stdexcept>
 
 #include <volk/volk.h>
 
+#ifdef ANDROID
+#include <android/native_window_jni.h>
+#include <android_native_app_glue.h>
+#include <backends/imgui_impl_android.h>
+#include <unistd.h>
+#else
 #include <GLFW/glfw3.h>
 #undef APIENTRY
 
 #include <backends/imgui_impl_glfw.h>
+#endif
+#define IMGUI_IMPL_VULKAN_USE_VOLK
 #include <backends/imgui_impl_vulkan.h>
 #include <fmt/ranges.h>
 #include <imgui_internal.h>
@@ -49,6 +58,7 @@
 constexpr int32_t k_imageQuality = 90;
 
 // GLFW Callback for file drop
+#ifndef ANDROID
 static void dropCb(GLFWwindow* window, int count, const char** paths)
 {
   auto* app = static_cast<nvapp::Application*>(glfwGetWindowUserPointer(window));
@@ -57,13 +67,27 @@ static void dropCb(GLFWwindow* window, int count, const char** paths)
     app->onFileDrop(nvutils::pathFromUtf8(paths[i]));
   }
 }
+#endif
+
+#ifdef ANDROID
+static int32_t handleInputEvent(struct android_app* app, AInputEvent* event)
+{
+  return ImGui_ImplAndroid_HandleInputEvent(event);
+}
+#endif
 
 nvapp::Application::Application(void)
 {
+#ifndef ANDROID
   glfwInit();
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImPlot::CreateContext();
+#else
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+  ImPlot::CreateContext();
+#endif
 }
 
 // Provides additional diagnostic information about which GPUs can be used with
@@ -147,6 +171,9 @@ void nvapp::Application::init(ApplicationCreateInfo& info)
   m_headlessFrameCount = info.headlessFrameCount;
   m_viewportSize       = {};  // Will be set by the first viewport size
   m_maxTexturePool     = info.texturePoolSize;
+#ifdef ANDROID
+  m_androidApp         = info.androidApp;
+#endif
 
   if(info.hasUndockableViewport == true)
   {
@@ -165,7 +192,31 @@ void nvapp::Application::init(ApplicationCreateInfo& info)
   // Initialize GLFW and create the window only if not headless
   if(!m_headless)
   {
+#ifdef ANDROID
+    // Wait for window to be initialized
+    while (m_androidApp->window == nullptr) {
+        int events;
+        struct android_poll_source* source;
+        // Use -1 timeout to block until an event is available
+        const int ident = ALooper_pollOnce(-1, nullptr, &events, (void**)&source);
+        if (ident >= 0) {
+            if (source != nullptr) source->process(m_androidApp, source);
+        }
+        if (m_androidApp->destroyRequested) {
+            throw std::runtime_error("App destroy requested during init");
+        }
+    }
+    m_windowHandle = m_androidApp->window;
+    m_windowSize = { (uint32_t)ANativeWindow_getWidth(m_windowHandle), (uint32_t)ANativeWindow_getHeight(m_windowHandle) };
+    m_androidApp->onInputEvent = handleInputEvent;
+
+    // Create surface
+    VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo{VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR};
+    surfaceCreateInfo.window = m_windowHandle;
+    NVVK_CHECK(vkCreateAndroidSurfaceKHR(m_instance, &surfaceCreateInfo, nullptr, &m_surface));
+#else
     initGlfw(info);
+#endif
   }
 
   // Used for creating single-time command buffers
@@ -216,6 +267,7 @@ void nvapp::Application::init(ApplicationCreateInfo& info)
   setupImGuiVulkanBackend(info.imguiConfigFlags);
 }
 
+#ifndef ANDROID
 void nvapp::Application::initGlfw(ApplicationCreateInfo& info)
 {
   glfwInit();
@@ -235,6 +287,7 @@ void nvapp::Application::initGlfw(ApplicationCreateInfo& info)
   glfwSetWindowUserPointer(m_windowHandle, this);
   glfwSetDropCallback(m_windowHandle, &dropCb);
 }
+#endif
 
 //-----------------------------------------------------------------------
 // Shutdown the application
@@ -242,6 +295,7 @@ void nvapp::Application::initGlfw(ApplicationCreateInfo& info)
 void nvapp::Application::deinit()
 {
   // Query the size/pos of the window, such that it get persisted
+#ifndef ANDROID
   if(!m_headless)
   {
     glm::ivec2 winSize{};
@@ -249,6 +303,7 @@ void nvapp::Application::deinit()
     m_winSize = {uint32_t(winSize.x), uint32_t(winSize.y)};
     glfwGetWindowPos(m_windowHandle, &m_winPos.x, &m_winPos.y);
   }
+#endif
 
   // This will call the onDetach of the elements
   for(std::shared_ptr<IAppElement>& e : m_elements)
@@ -275,7 +330,11 @@ void nvapp::Application::deinit()
   ImGui_ImplVulkan_Shutdown();
   if(!m_headless)
   {
+#ifdef ANDROID
+    ImGui_ImplAndroid_Shutdown();
+#else
     ImGui_ImplGlfw_Shutdown();
+#endif
     m_swapchain.deinit();
   }
 
@@ -301,8 +360,10 @@ void nvapp::Application::deinit()
     vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
 
     // Glfw cleanup
+#ifndef ANDROID
     glfwDestroyWindow(m_windowHandle);
     glfwTerminate();
+#endif
   }
 }
 
@@ -346,7 +407,11 @@ void nvapp::Application::close()
   }
   else
   {
+#ifdef ANDROID
+    ANativeActivity_finish(m_androidApp->activity);
+#else
     glfwSetWindowShouldClose(m_windowHandle, true);
+#endif
   }
 }
 
@@ -369,7 +434,11 @@ void nvapp::Application::run()
   }
 
   // Main rendering loop
+#ifdef ANDROID
+  while(!m_androidApp->destroyRequested)
+#else
   while(!glfwWindowShouldClose(m_windowHandle))
+#endif
   {
     // Window System Events.
     // We add a delay before polling to reduce latency.
@@ -377,18 +446,41 @@ void nvapp::Application::run()
     {
       m_framePacer.pace();
     }
+#ifdef ANDROID
+    int events;
+    struct android_poll_source* source;
+    while (ALooper_pollOnce(0, nullptr, &events, (void**)&source) >= 0) {
+        if (source != nullptr) source->process(m_androidApp, source);
+        if (m_androidApp->destroyRequested) break;
+    }
+    if (m_androidApp->destroyRequested || m_androidApp->window == nullptr)
+        continue;
+#else
     glfwPollEvents();
+#endif
 
     // Skip rendering when minimized
+#ifdef ANDROID
+    if (m_androidApp->window == nullptr)
+    {
+      usleep(10000);
+      continue;
+    }
+#else
     if(glfwGetWindowAttrib(m_windowHandle, GLFW_ICONIFIED) == GLFW_TRUE)
     {
       ImGui_ImplGlfw_Sleep(10);
       continue;
     }
+#endif
 
     // Begin New Frame for ImGui
     ImGui_ImplVulkan_NewFrame();
+#ifdef ANDROID
+    ImGui_ImplAndroid_NewFrame();
+#else
     ImGui_ImplGlfw_NewFrame();
+#endif
     ImGui::NewFrame();
 
     // Setup ImGui Docking and UI
@@ -495,8 +587,10 @@ void nvapp::Application::setupImguiDock()
 void nvapp::Application::onViewportSizeChange(VkExtent2D size)
 {
   // Check for DPI scaling and adjust the font size
-  float xscale, yscale;
+  float xscale = 1.0f, yscale = 1.0f;
+#ifndef ANDROID
   glfwGetWindowContentScale(m_windowHandle, &xscale, &yscale);
+#endif
   ImGui::GetIO().FontGlobalScale *= xscale / m_dpiScale;
   m_dpiScale = xscale;
 
@@ -948,16 +1042,27 @@ void nvapp::Application::setupImGuiVulkanBackend(ImGuiConfigFlags configFlags)
   {
     io.ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;  // In headless mode, we don't allow other viewport
   }
+#ifdef ANDROID
+  io.ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;
+#endif
 
   if(!m_headless)
   {
+#ifdef ANDROID
+    ImGui_ImplAndroid_Init(m_windowHandle);
+#else
     ImGui_ImplGlfw_InitForVulkan(m_windowHandle, true);
+#endif
     imageFormats = m_swapchain.getImageFormat();
   }
 
   // ImGui Initialization for Vulkan
   ImGui_ImplVulkan_InitInfo initInfo = {
+#ifdef ANDROID
+      .ApiVersion                  = VK_API_VERSION_1_3,
+#else
       .ApiVersion                  = VK_API_VERSION_1_4,
+#endif
       .Instance                    = m_instance,
       .PhysicalDevice              = m_physicalDevice,
       .Device                      = m_device,
@@ -1114,6 +1219,9 @@ void nvapp::Application::prependCommandBuffer(const VkCommandBufferSubmitInfo& c
 
 void nvapp::Application::testAndSetWindowSizeAndPos(const glm::uvec2& winSize)
 {
+#ifdef ANDROID
+  return;
+#else
   bool centerWindow = false;
   // If winSize is provided, use it
   if(winSize.x != 0 && winSize.y != 0)
@@ -1162,11 +1270,15 @@ void nvapp::Application::testAndSetWindowSizeAndPos(const glm::uvec2& winSize)
   }
 
   m_windowSize = {m_winSize.x, m_winSize.y};
+#endif
 }
 
 // Check if window position is within visible monitor bounds
 bool nvapp::Application::isWindowPosValid(const glm::ivec2& winPos)
 {
+#ifdef ANDROID
+  return true;
+#else
   int           monitorCount;
   GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
 
@@ -1188,4 +1300,5 @@ bool nvapp::Application::isWindowPosValid(const glm::ivec2& winPos)
   }
 
   return false;
+#endif
 }

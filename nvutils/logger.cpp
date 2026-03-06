@@ -34,8 +34,11 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <debugapi.h>
-#elif defined(__unix__)
+#else
+#include <unistd.h>
+#if defined(__unix__)
 #include <signal.h>
+#endif
 #endif
 
 #include <fmt/format.h>
@@ -414,4 +417,11 @@ void nvutils::Logger::outputToCallback(LogLevel level, const std::string& messag
   LOGW("This is a warning message.");
   const int integerValue = 12345;
   LOGE("This is an error message with id: %d.", integerValue);
+}
+
+void nvprintSetCallback(nvprintCallback callback)
+{
+  nvutils::Logger::getInstance().setLogCallback([callback](nvutils::Logger::LogLevel level, const std::string& msg) {
+    callback(static_cast<int>(level), msg.c_str());
+  });
 }

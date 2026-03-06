@@ -14,12 +14,24 @@ add_library(${LIB_NAME} STATIC ${LIB_SOURCES})
 cmake_path(GET CMAKE_CURRENT_LIST_DIR PARENT_PATH PARENT_DIR)
 target_include_directories(${LIB_NAME} PUBLIC ${PARENT_DIR})
 
+find_package(Vulkan REQUIRED)
+
 target_link_libraries(
   ${LIB_NAME}
   PUBLIC nvutils
          nvvk
-         shaderc_shared
 )
+
+if(ANDROID)
+  target_include_directories(${LIB_NAME} PUBLIC ${ANDROID_NDK}/sources/third_party/shaderc/include)
+  target_link_libraries(${LIB_NAME} PUBLIC ${ANDROID_NDK}/sources/third_party/shaderc/libs/c++_static/${ANDROID_ABI}/libshaderc.a )
+else()
+  if(TARGET Vulkan::shaderc_combined)
+    target_link_libraries(${LIB_NAME} PUBLIC Vulkan::shaderc_combined)
+  else()
+    target_link_libraries(${LIB_NAME} PUBLIC shaderc_shared)
+  endif()
+endif()
 
 target_precompile_headers(${LIB_NAME} PRIVATE
   <filesystem>
