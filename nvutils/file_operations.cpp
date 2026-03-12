@@ -93,7 +93,6 @@ std::filesystem::path nvutils::findFile(const std::filesystem::path& filename,
         if (g_assetManager && filePath.is_relative()) {
           // Use getAndroidAssetPath to ensure consistency with loadFile
           std::string assetPath = getAndroidAssetPath(path / filename);
-            ALOGI("findFile: checking asset '%s'", assetPath.c_str());
             AAsset* asset = AAssetManager_open(g_assetManager, assetPath.c_str(), AASSET_MODE_UNKNOWN);
             if (asset) {
                 AAsset_close(asset);
@@ -108,7 +107,6 @@ std::filesystem::path nvutils::findFile(const std::filesystem::path& filename,
     if (g_assetManager) {
         std::string assetPath = getAndroidAssetPath(filename);
         
-        ALOGI("findFile: checking asset '%s'", assetPath.c_str());
         AAsset* asset = AAssetManager_open(g_assetManager, assetPath.c_str(), AASSET_MODE_UNKNOWN);
         if (asset) {
             AAsset_close(asset);
