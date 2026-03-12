@@ -56,5 +56,10 @@ void PhysicalDeviceInfo::init(VkPhysicalDevice physicalDevice, uint32_t apiVersi
   }
   vkGetPhysicalDeviceFeatures2(physicalDevice, &features);
   features10 = features.features;
+
+  uint32_t extCount = 0;
+  vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extCount, nullptr);
+  extensions.resize(extCount);
+  vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extCount, extensions.data());
 }
 }  // namespace nvvk

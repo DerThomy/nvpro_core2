@@ -288,9 +288,13 @@ void GraphicsPipelineCreator::buildPipelineCreateInfo(VkGraphicsPipelineCreateIn
     m_staticVertexBindings[i].stride    = graphicsState.vertexBindings[i].stride;
     if(m_staticVertexBindings[i].inputRate != VK_VERTEX_INPUT_RATE_VERTEX)
     {
-      m_staticVertexBindingDivisors[divisorCount].binding = graphicsState.vertexBindings[i].binding;
-      m_staticVertexBindingDivisors[divisorCount].divisor = graphicsState.vertexBindings[i].divisor;
-      divisorCount++;
+      // Only add divisor description if it is not 1. 1 is the default behavior if the struct is missing.
+      if(graphicsState.vertexBindings[i].divisor != 1)
+      {
+        m_staticVertexBindingDivisors[divisorCount].binding = graphicsState.vertexBindings[i].binding;
+        m_staticVertexBindingDivisors[divisorCount].divisor = graphicsState.vertexBindings[i].divisor;
+        divisorCount++;
+      }
     }
   }
 

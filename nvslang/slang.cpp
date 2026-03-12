@@ -142,7 +142,7 @@ void nvslang::SlangCompiler::defaultTarget()
 {
   m_targets.push_back({
       .format                      = SLANG_SPIRV,
-      .profile                     = m_globalSession->findProfile("spirv_1_6+vulkan_1_3"),
+      .profile                     = m_globalSession->findProfile("spirv_1_5+vulkan_1_3"),
       .flags                       = 0,
       .forceGLSLScalarBufferLayout = true,
   });

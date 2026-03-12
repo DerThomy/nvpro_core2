@@ -1058,7 +1058,7 @@ void nvapp::Application::setupImGuiVulkanBackend(ImGuiConfigFlags configFlags)
 
   // ImGui Initialization for Vulkan
   ImGui_ImplVulkan_InitInfo initInfo = {
-#ifdef ANDROID
+#if defined(__aarch64__) || defined(_M_ARM64)
       .ApiVersion                  = VK_API_VERSION_1_3,
 #else
       .ApiVersion                  = VK_API_VERSION_1_4,

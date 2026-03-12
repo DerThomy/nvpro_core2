@@ -18,6 +18,10 @@
 */
 
 #include <vulkan/vulkan_core.h>
+#include <vector>
+#include <string>
+#include <algorithm>
+#include <cstring>
 
 #pragma once
 
@@ -38,7 +42,17 @@ struct PhysicalDeviceInfo
   VkPhysicalDeviceVulkan13Features features13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
   VkPhysicalDeviceVulkan14Features features14 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES};
 
+  std::vector<VkExtensionProperties> extensions;
+
   void init(VkPhysicalDevice physicalDevice, uint32_t apiVersion = VK_API_VERSION_1_4);
+
+  bool hasDeviceExtension(const char* name) const
+  {
+    return std::any_of(extensions.begin(), extensions.end(),
+                       [&](const VkExtensionProperties& ext) {
+                         return strcmp(name, ext.extensionName) == 0;
+                       });
+  }
 };
 
 }  // namespace nvvk
