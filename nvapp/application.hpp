@@ -225,6 +225,7 @@ public:
   inline const VkExtent2D&      getWindowSize() const { return m_windowSize; }
 #ifdef ANDROID
   inline ANativeWindow*         getWindowHandle() const { return m_windowHandle; }
+  void                          onAndroidAppCmd(int32_t cmd);
 #else
   inline GLFWwindow*            getWindowHandle() const { return m_windowHandle; }
 #endif
@@ -296,6 +297,7 @@ private:
     VkCommandPool   cmdPool{};      // Command pool for recording commands for this frame
     VkCommandBuffer cmdBuffer{};    // Command buffer containing the frame's rendering commands
     uint64_t        frameNumber{};  // Timeline value for synchronization (increases each frame)
+    VkFence         fence{};        // Fence for CPU synchronization
   };
   std::vector<FrameData> m_frameData{};    // Collection of per-frame resources to support multiple frames in flight
   VkSemaphore m_frameTimelineSemaphore{};  // Timeline semaphore used to synchronize CPU submission with GPU completion

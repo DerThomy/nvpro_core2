@@ -112,6 +112,7 @@ if(NOT TARGET imgui)
   # Link against GLFW and Volk
   if(ANDROID)
     target_link_libraries(imgui PUBLIC volk)
+    target_include_directories(imgui PUBLIC ${ANDROID_NDK}/sources/android/native_app_glue)
   else()
     target_link_libraries(imgui PUBLIC glfw volk)
   endif()

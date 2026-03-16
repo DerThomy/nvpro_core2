@@ -74,6 +74,12 @@ static int32_t handleInputEvent(struct android_app* app, AInputEvent* event)
 {
   return ImGui_ImplAndroid_HandleInputEvent(event);
 }
+
+static void handleAppCmd(struct android_app* app, int32_t cmd)
+{
+  if(app->userData)
+    ((nvapp::Application*)app->userData)->onAndroidAppCmd(cmd);
+}
 #endif
 
 nvapp::Application::Application(void)
@@ -173,6 +179,8 @@ void nvapp::Application::init(ApplicationCreateInfo& info)
   m_maxTexturePool     = info.texturePoolSize;
 #ifdef ANDROID
   m_androidApp         = info.androidApp;
+  m_androidApp->userData = this;
+  m_androidApp->onAppCmd = handleAppCmd;
 #endif
 
   if(info.hasUndockableViewport == true)
@@ -343,6 +351,7 @@ void nvapp::Application::deinit()
   {
     vkFreeCommandBuffers(m_device, m_frameData[i].cmdPool, 1, &m_frameData[i].cmdBuffer);
     vkDestroyCommandPool(m_device, m_frameData[i].cmdPool, nullptr);
+    vkDestroyFence(m_device, m_frameData[i].fence, nullptr);
   }
   vkDestroySemaphore(m_device, m_frameTimelineSemaphore, nullptr);
   ImGui::DestroyContext();
@@ -435,6 +444,7 @@ void nvapp::Application::run()
 
   // Main rendering loop
 #ifdef ANDROID
+  float logTimer = 0.0f;
   while(!m_androidApp->destroyRequested)
 #else
   while(!glfwWindowShouldClose(m_windowHandle))
@@ -453,10 +463,32 @@ void nvapp::Application::run()
         if (source != nullptr) source->process(m_androidApp, source);
         if (m_androidApp->destroyRequested) break;
     }
-    if (m_androidApp->destroyRequested || m_androidApp->window == nullptr)
-        continue;
 #else
     glfwPollEvents();
+#endif
+
+    // Handle resize on Android (e.g. orientation change)
+#ifdef ANDROID
+    if (m_androidApp->window) {
+        int32_t width = ANativeWindow_getWidth(m_androidApp->window);
+        int32_t height = ANativeWindow_getHeight(m_androidApp->window);
+        if (width > 0 && height > 0 && (width != (int32_t)m_windowSize.width || height != (int32_t)m_windowSize.height)) {
+            vkDeviceWaitIdle(m_device);
+            
+            // 2. Force Android to synchronize the BufferQueue to the new orientation.
+            // This eliminates the "one step behind" GUI rotation lag.
+            ANativeWindow_setBuffersGeometry(m_androidApp->window, width, height, 0);
+
+            // 3. Update app and ImGui state
+            m_windowSize = { (uint32_t)width, (uint32_t)height };
+            
+            ImGuiIO& io = ImGui::GetIO();
+            io.DisplaySize = ImVec2((float)width, (float)height);
+
+            // 4. Trigger Vulkan swapchain rebuild
+            m_swapchain.requestRebuild();
+        }
+    }
 #endif
 
     // Skip rendering when minimized
@@ -482,6 +514,15 @@ void nvapp::Application::run()
     ImGui_ImplGlfw_NewFrame();
 #endif
     ImGui::NewFrame();
+
+#ifdef ANDROID
+    logTimer += ImGui::GetIO().DeltaTime;
+    if(logTimer >= 5.0f)
+    {
+      LOGI("Framerate: %.1f FPS\n", ImGui::GetIO().Framerate);
+      logTimer = 0.0f;
+    }
+#endif
 
     // Setup ImGui Docking and UI
     setupImguiDock();
@@ -526,20 +567,20 @@ void nvapp::Application::run()
       freeResourcesQueue();
 
       // Prepare Frame Synchronization
-      prepareFrameToSignal(m_swapchain.getMaxFramesInFlight());
+      prepareFrameToSignal(getFrameCycleSize());
 
       // Record Commands
       VkCommandBuffer cmd = beginCommandRecording();
       drawFrame(cmd);            // Call onUIRender() and onRender() for each element
       renderToSwapchain(cmd);    // Render ImGui to swapchain
       addSwapchainSemaphores();  // Setup synchronization
-      endFrame(cmd, m_swapchain.getMaxFramesInFlight());
+      endFrame(cmd, getFrameCycleSize());
 
       // Present Frame
       presentFrame();  // This can also trigger swapchain rebuild
 
       // Advance Frame
-      advanceFrame(m_swapchain.getMaxFramesInFlight());
+      advanceFrame(getFrameCycleSize());
     }
 
     // End ImGui frame
@@ -669,6 +710,22 @@ bool nvapp::Application::prepareFrameResources()
 {
   if(m_swapchain.needRebuilding())
   {
+// #ifdef ANDROID
+      // Query Vulkan's view of the surface before rebuilding.
+//      VkSurfaceCapabilitiesKHR caps;
+//      vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &caps);
+//
+//      // 0xFFFFFFFF means the OS doesn't care (we dictate the size).
+//      // Otherwise, if Vulkan's expected size doesn't match our updated window size,
+//      // the driver is lagging behind the OS.
+//      if (caps.currentExtent.width != 0xFFFFFFFF &&
+//          (caps.currentExtent.width != m_windowSize.width || caps.currentExtent.height != m_windowSize.height))
+//      {
+//          // Driver hasn't caught up. Skip this frame and wait for the next run loop iteration.
+//          return false;
+//      }
+//#endif
+
     NVVK_CHECK(m_swapchain.reinitResources(m_windowSize, m_vsyncWanted));
   }
 
@@ -686,6 +743,9 @@ VkCommandBuffer nvapp::Application::beginCommandRecording()
 {
   // Get the frame data for the current frame in the ring buffer
   FrameData& frame = m_frameData[m_frameRingCurrent];
+
+  // Reset the fence to reuse for the current frame
+  NVVK_CHECK(vkResetFences(m_device, 1, &frame.fence));
 
   // Reset the command pool to reuse the command buffer for recording new rendering commands for the current frame.
   NVVK_CHECK(vkResetCommandPool(m_device, frame.cmdPool, 0));
@@ -758,7 +818,7 @@ void nvapp::Application::endFrame(VkCommandBuffer cmd, uint32_t frameInFlights)
   };
 
   // Submit the command buffer to the GPU and signal when it's done
-  NVVK_CHECK(vkQueueSubmit2(m_queues[0].queue, 1, &submitInfo, nullptr));
+  NVVK_CHECK(vkQueueSubmit2(m_queues[0].queue, 1, &submitInfo, frame.fence));
 }
 
 //-----------------------------------------------------------------------
@@ -783,14 +843,22 @@ void nvapp::Application::advanceFrame(uint32_t frameInFlights)
 //
 void nvapp::Application::waitForFrameCompletion() const
 {
-  // Wait until GPU has finished processing the frame that was using these resources previously (numFramesInFlight frames ago)
-  const VkSemaphoreWaitInfo waitInfo = {
-      .sType          = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-      .semaphoreCount = 1,
-      .pSemaphores    = &m_frameTimelineSemaphore,
-      .pValues        = &m_frameData[m_frameRingCurrent].frameNumber,
-  };
-  vkWaitSemaphores(m_device, &waitInfo, std::numeric_limits<uint64_t>::max());
+#ifdef ANDROID
+  // On Android, we must poll the event loop to avoid ANR while waiting for the GPU.
+  // especially in benchmark mode where we might push frames faster than they can be presented/completed.
+  VkResult result;
+  do {
+      result = vkWaitForFences(m_device, 1, &m_frameData[m_frameRingCurrent].fence, VK_TRUE, 10000000); // 10ms wait
+      int events;
+      struct android_poll_source* source;
+      while (ALooper_pollOnce(0, nullptr, &events, (void**)&source) >= 0) {
+          if (source != nullptr) source->process(m_androidApp, source);
+      }
+      if (m_androidApp->destroyRequested) break;
+  } while (result == VK_TIMEOUT);
+#else
+  vkWaitForFences(m_device, 1, &m_frameData[m_frameRingCurrent].fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+#endif
 }
 
 
@@ -971,6 +1039,11 @@ void nvapp::Application::createFrameSubmission(uint32_t numFrames)
     };
     NVVK_CHECK(vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &m_frameData[i].cmdBuffer));
     NVVK_DBG_NAME(m_frameData[i].cmdBuffer);
+
+    // Create synchronization fence (start signaled so we don't wait on first frame)
+    VkFenceCreateInfo fenceInfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    NVVK_CHECK(vkCreateFence(device, &fenceInfo, nullptr, &m_frameData[i].fence));
   }
 }
 
@@ -1049,7 +1122,7 @@ void nvapp::Application::setupImGuiVulkanBackend(ImGuiConfigFlags configFlags)
   if(!m_headless)
   {
 #ifdef ANDROID
-    ImGui_ImplAndroid_Init(m_windowHandle);
+    ImGui_ImplAndroid_Init(m_androidApp);
 #else
     ImGui_ImplGlfw_InitForVulkan(m_windowHandle, true);
 #endif
@@ -1302,3 +1375,25 @@ bool nvapp::Application::isWindowPosValid(const glm::ivec2& winPos)
   return false;
 #endif
 }
+
+#ifdef ANDROID
+void nvapp::Application::onAndroidAppCmd(int32_t cmd)
+{
+  switch(cmd)
+  {
+    case APP_CMD_INIT_WINDOW:
+      m_windowHandle = m_androidApp->window;
+      break;
+    case APP_CMD_TERM_WINDOW:
+      m_windowHandle = nullptr;
+      break;
+    case APP_CMD_CONFIG_CHANGED:
+    case APP_CMD_WINDOW_RESIZED:
+      // setBuffersGeometry can cause instability/crashes with ImGui on some devices. 
+      // The run() loop handles resize detection automatically via ANativeWindow_getWidth/Height.
+      // if(m_windowHandle)
+      //   ANativeWindow_setBuffersGeometry(m_windowHandle, 0, 0, 0);
+      break;
+  }
+}
+#endif

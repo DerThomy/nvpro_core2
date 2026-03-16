@@ -73,12 +73,12 @@ struct ContextInitInfo
   VkAllocationCallbacks*           alloc                 = nullptr;
   bool                             enableAllFeatures     = true;
   int32_t                          forceGPU              = -1;
-#if NDEBUG
-  bool enableValidationLayers = false;  // Disable validation layers in release
-  bool verbose                = false;
-#else
-  bool enableValidationLayers = true;  // Enable validation layers
+#if DEBUG_OR_RELWITHDEB
+  bool enableValidationLayers = true;  // Disable validation layers in release
   bool verbose                = true;
+#else
+  bool enableValidationLayers = false;  // Enable validation layers
+  bool verbose                = false;
 #endif
   // [optional] Callback called during physical device selection process.
   // Return true to allow this physical device to be selected, false to reject it.

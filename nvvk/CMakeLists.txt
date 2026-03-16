@@ -28,3 +28,7 @@ target_precompile_headers(${LIB_NAME} PRIVATE
 
 add_library(nvpro2::${LIB_NAME} ALIAS ${LIB_NAME})
 set_property(TARGET ${LIB_NAME} PROPERTY FOLDER "nvpro_core2")
+
+target_compile_definitions(${LIB_NAME} PRIVATE
+    $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:DEBUG_OR_RELWITHDEB>
+)

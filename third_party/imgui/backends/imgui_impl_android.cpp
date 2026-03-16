@@ -33,6 +33,7 @@
 #include "imgui.h"
 #ifndef IMGUI_DISABLE
 #include "imgui_impl_android.h"
+#include <android_native_app_glue.h>
 #include <time.h>
 #include <android/native_window.h>
 #include <android/input.h>
@@ -41,7 +42,7 @@
 
 // Android data
 static double                                   g_Time = 0.0;
-static ANativeWindow*                           g_Window;
+static android_app*                             g_App;
 static char                                     g_LogTag[] = "ImGuiExample";
 
 static ImGuiKey ImGui_ImplAndroid_KeyCodeToImGuiKey(int32_t key_code)
@@ -262,11 +263,11 @@ int32_t ImGui_ImplAndroid_HandleInputEvent(const AInputEvent* input_event)
     return 0;
 }
 
-bool ImGui_ImplAndroid_Init(ANativeWindow* window)
+bool ImGui_ImplAndroid_Init(struct android_app* app)
 {
     IMGUI_CHECKVERSION();
 
-    g_Window = window;
+    g_App = app;
     g_Time = 0.0;
 
     // Setup backend capabilities flags
@@ -286,9 +287,12 @@ void ImGui_ImplAndroid_NewFrame()
 {
     ImGuiIO& io = ImGui::GetIO();
 
+    if (!g_App || !g_App->window)
+        return;
+
     // Setup display size (every frame to accommodate for window resizing)
-    int32_t window_width = ANativeWindow_getWidth(g_Window);
-    int32_t window_height = ANativeWindow_getHeight(g_Window);
+    int32_t window_width = ANativeWindow_getWidth(g_App->window);
+    int32_t window_height = ANativeWindow_getHeight(g_App->window);
     int display_width = window_width;
     int display_height = window_height;
 

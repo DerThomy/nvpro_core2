@@ -165,7 +165,7 @@ VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
   bool                isMsaa = m_info.sampleCount > VK_SAMPLE_COUNT_1_BIT;
   bool                lazyAllocationSupported = false;
 
-  if(isMsaa)
+  // Check for lazy allocation support
   {
     VkPhysicalDeviceMemoryProperties memProps;
     vkGetPhysicalDeviceMemoryProperties(m_info.allocator->getPhysicalDevice(), &memProps);
@@ -173,7 +173,6 @@ VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
     {
       if((memProps.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) != 0)
       {
-        printf("LAZILY_ALLOCATED_BIT is supported\n");
         lazyAllocationSupported = true;
         break;
       }
@@ -226,15 +225,17 @@ VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
     m_res.gBufferColor[c].descriptor.sampler = m_info.imageSampler;
     if(isMsaa)
     {
-      // Transient usage allows tile-based GPUs to not allocate backing memory if possible.
-      const VkImageUsageFlags msaaUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+      // Reset the alpha swizzle to identity before creating the MSAA image view,
+      // as color attachments must use identity swizzles.
+      viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+      const VkImageUsageFlags msaaUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
       
       info.samples = m_info.sampleCount;
       info.usage   = msaaUsage;
       
       NVVK_FAIL_RETURN(m_info.allocator->createImage(m_res.gBufferColorMSAA[c], info, viewInfo,
-                                                     {.usage = lazyAllocationSupported ? VMA_MEMORY_USAGE_GPU_LAZILY_ALLOCATED :
-                                                                                         VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE}));
+                                                     {.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE}));
       dutil.setObjectName(m_res.gBufferColorMSAA[c].image, "G-Color-MSAA-" + std::to_string(c));
       dutil.setObjectName(m_res.gBufferColorMSAA[c].descriptor.imageView, "G-Color-MSAA-" + std::to_string(c));
     }
@@ -259,7 +260,10 @@ VkResult nvvk::GBuffer::initResources(VkCommandBuffer cmd)
         .format           = m_info.depthFormat,
         .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT, .levelCount = 1, .layerCount = 1},
     };
-    NVVK_FAIL_RETURN(m_info.allocator->createImage(m_res.gBufferDepth, createInfo, viewInfo));
+
+    VmaMemoryUsage memFlags = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+    NVVK_FAIL_RETURN(m_info.allocator->createImage(m_res.gBufferDepth, createInfo, viewInfo, {.usage = memFlags}));
     dutil.setObjectName(m_res.gBufferDepth.image, "G-Depth");
     dutil.setObjectName(m_res.gBufferDepth.descriptor.imageView, "G-Depth");
   }
