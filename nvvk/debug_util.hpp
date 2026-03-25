@@ -164,5 +164,6 @@ private:
 #define DBGUTIL_FILE_LINE() (__FILE__ ":" + std::to_string(__LINE__))
 
 #define NVVK_DBG_SCOPE(_cmd) nvvk::DebugUtil::ScopedCmdLabel scopedCmdLabel(_cmd, __FUNCTION__)
+#define NVVK_DBG_SCOPE_NAME(_cmd, _name) nvvk::DebugUtil::ScopedCmdLabel scopedCmdLabel(_cmd, _name)
 #define NVVK_DBG_NAME(obj)                                                                                             \
   nvvk::DebugUtil::getInstance().setObjectName(obj, std::string(__FUNCTION__) + ":" #obj "(" + std::to_string(__LINE__) + ")")

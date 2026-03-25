@@ -109,7 +109,7 @@ namespace nvvk {
     access |= read ? VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR : 0;
   }
 
-  assert((access != 0 || stage == VK_PIPELINE_STAGE_2_NONE) && "Missing stage implementation");
+  assert((access != 0 || stage == VK_PIPELINE_STAGE_2_NONE || (stage & ~(VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT | VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT)) == 0) && "Missing stage implementation");
   return access;
 }
 
