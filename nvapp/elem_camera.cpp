@@ -89,6 +89,18 @@ void nvapp::ElementCamera::updateCamera(std::shared_ptr<nvutils::CameraManipulat
       m_cameraManip->keyMotion({0, -keyMotionFactor}, nvutils::CameraManipulator::Pan);
       inputs.shift = inputs.ctrl = false;
     }
+
+    if(ImGui::IsKeyDown(ImGuiKey_E))
+    {
+      m_cameraManip->keyMotion({keyMotionFactor, 0}, nvutils::CameraManipulator::LookAround);
+      inputs.shift = inputs.ctrl = false;
+    }
+
+    if(ImGui::IsKeyDown(ImGuiKey_Q))
+    {
+      m_cameraManip->keyMotion({-keyMotionFactor, 0}, nvutils::CameraManipulator::LookAround);
+      inputs.shift = inputs.ctrl = false;
+    }
   }
 
   if(ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Middle)

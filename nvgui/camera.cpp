@@ -363,7 +363,7 @@ static bool QuickActionsBar(std::shared_ptr<nvutils::CameraManipulator> cameraM,
     ImGui::BulletText("Middle Mouse: Pan");
     ImGui::BulletText("Mouse Wheel: Zoom (change FOV)");
     ImGui::BulletText("WASD: Move camera");
-    ImGui::BulletText("Q/E: Roll camera");
+    ImGui::BulletText("Q/E: Rotate camera left/right");
     ImGui::Spacing();
     ImGui::Text("Navigation Modes:");
     ImGui::BulletText("Examine: Orbit around center point");

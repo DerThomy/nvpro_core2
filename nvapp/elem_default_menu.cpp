@@ -65,10 +65,10 @@ void nvapp::ElementDefaultMenu::onUIMenu()
 #endif  // SHOW_IMGUI_DEMO
 
   // Shortcuts
-  if(ImGui::IsKeyPressed(ImGuiKey_Q) && ImGui::IsKeyDown(ImGuiKey_LeftCtrl))
-  {
-    close_app = true;
-  }
+  // if(ImGui::IsKeyPressed(ImGuiKey_Q) && ImGui::IsKeyDown(ImGuiKey_RightCtrl))
+  // {
+  //   close_app = true;
+  // }
 
   if(ImGui::IsKeyPressed(ImGuiKey_V) && ImGui::IsKeyDown(ImGuiKey_LeftCtrl) && ImGui::IsKeyDown(ImGuiKey_LeftShift))
   {

@@ -298,6 +298,15 @@ void CameraManipulator::motion(const glm::vec2& screenDisplacement, Actions acti
 // Note: dx and dy are the speed of the camera movement.
 void CameraManipulator::keyMotion(glm::vec2 delta, Actions action)
 {
+  if(action == LookAround)
+  {
+    orbit(delta, true);
+    // Resetting animation and update the camera
+    m_animDone = true;
+    updateLookatMatrix();
+    return;
+  }
+
   float movementSpeed = m_speed;
 
   auto directionVector = glm::normalize(m_current.ctr - m_current.eye);  // Vector from eye to center
