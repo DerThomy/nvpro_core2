@@ -93,13 +93,21 @@ public:
     float     fov  = 60.0f;
     glm::vec2 clip = {0.001f, 100000.0f};
 
+    // For asymmetric projection matrices (like from 3DGS cameras)
+    float focalX = -1.0f;
+    float focalY = -1.0f;
+    int   resX   = -1;
+    int   resY   = -1;
+
     bool operator!=(const Camera& rhr) const
     {
-      return (eye != rhr.eye) || (ctr != rhr.ctr) || (up != rhr.up) || (fov != rhr.fov) || (clip != rhr.clip);
+      return (eye != rhr.eye) || (ctr != rhr.ctr) || (up != rhr.up) || (fov != rhr.fov) || (clip != rhr.clip) || 
+             (focalX != rhr.focalX) || (focalY != rhr.focalY) || (resX != rhr.resX) || (resY != rhr.resY);
     }
     bool operator==(const Camera& rhr) const
     {
-      return (eye == rhr.eye) && (ctr == rhr.ctr) && (up == rhr.up) && (fov == rhr.fov) && (clip == rhr.clip);
+      return (eye == rhr.eye) && (ctr == rhr.ctr) && (up == rhr.up) && (fov == rhr.fov) && (clip == rhr.clip) &&
+             (focalX == rhr.focalX) && (focalY == rhr.focalY) && (resX == rhr.resX) && (resY == rhr.resY);
     }
 
     // basic serialization, mostly for copy/paste
@@ -144,7 +152,34 @@ public:
 
   const glm::mat4 getPerspectiveMatrix() const
   {
-    glm::mat4 projMatrix = glm::perspectiveRH_ZO(getRadFov(), getAspectRatio(), m_current.clip.x, m_current.clip.y);
+    glm::mat4 projMatrix;
+    if (m_current.focalX > 0.0f && m_current.focalY > 0.0f && m_current.resX > 0 && m_current.resY > 0)
+    {
+      float n = m_current.clip.x;
+      float f = m_current.clip.y;
+      
+      // Scale focal lengths based on current window size vs original resolution
+      float scaleX = (float)m_windowSize.x / (float)m_current.resX;
+      float scaleY = (float)m_windowSize.y / (float)m_current.resY;
+      
+      float fx = m_current.focalX * scaleX;
+      float fy = m_current.focalY * scaleY;
+      
+      float width = (float)m_windowSize.x;
+      float height = (float)m_windowSize.y;
+
+      projMatrix = glm::mat4(0.0f);
+      projMatrix[0][0] = 2.0f * fx / width;
+      projMatrix[1][1] = 2.0f * fy / height;
+      projMatrix[2][2] = f / (n - f);
+      projMatrix[2][3] = -1.0f;
+      projMatrix[3][2] = -(f * n) / (f - n);
+    }
+    else
+    {
+      projMatrix = glm::perspectiveRH_ZO(getRadFov(), getAspectRatio(), m_current.clip.x, m_current.clip.y);
+    }
+    
     projMatrix[1][1] *= -1;  // Flip the Y axis
     return projMatrix;
   }
