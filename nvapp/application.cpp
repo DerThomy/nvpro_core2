@@ -284,7 +284,30 @@ void nvapp::Application::initGlfw(ApplicationCreateInfo& info)
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);  // Aware of DPI scaling
   m_windowHandle = glfwCreateWindow(m_windowSize.width, m_windowSize.height, info.name.c_str(), nullptr, nullptr);
+
+  // Adjust size and position to ensure window fits within the monitor's work area (excluding taskbar)
+  int left = 0, top = 0, right = 0, bottom = 0;
+  glfwGetWindowFrameSize(m_windowHandle, &left, &top, &right, &bottom);
+  int workX = 0, workY = 0, workW = 0, workH = 0;
+  glfwGetMonitorWorkarea(glfwGetPrimaryMonitor(), &workX, &workY, &workW, &workH);
+
+  int maxClientW = workW - (left + right);
+  int maxClientH = workH - (top + bottom);
+
+  if (m_windowSize.width > (uint32_t)maxClientW) m_windowSize.width = maxClientW;
+  if (m_windowSize.height > (uint32_t)maxClientH) m_windowSize.height = maxClientH;
+  m_winSize = {m_windowSize.width, m_windowSize.height};
+
   glfwSetWindowSize(m_windowHandle, m_windowSize.width, m_windowSize.height);  // Sets the size of the window using the DPI scaling
+  
+  if(m_winPos.x < workX + left)
+  {
+    m_winPos.x = workX + left;
+  }
+  if(m_winPos.y < workY + top)
+  {
+    m_winPos.y = workY + top;
+  }
   glfwSetWindowPos(m_windowHandle, m_winPos.x, m_winPos.y);
 
   // Create the window surface
@@ -1324,8 +1347,10 @@ void nvapp::Application::testAndSetWindowSizeAndPos(const glm::uvec2& winSize)
       int monX, monY;
       glfwGetMonitorPos(glfwGetPrimaryMonitor(), &monX, &monY);
       const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
-      m_winPos.x              = monX + (mode->width - m_winSize.x) / 2;
-      m_winPos.y              = monY + (mode->height - m_winSize.y) / 2;
+      int targetX             = monX + (mode->width - static_cast<int>(m_winSize.x)) / 2;
+      int targetY             = monY + (mode->height - static_cast<int>(m_winSize.y)) / 2;
+      m_winPos.x              = targetX < monX ? monX : targetX;
+      m_winPos.y              = targetY < monY ? monY : targetY;
     }
   }
   else if(!m_headless)
@@ -1337,8 +1362,10 @@ void nvapp::Application::testAndSetWindowSizeAndPos(const glm::uvec2& winSize)
       int monX, monY;
       glfwGetMonitorPos(glfwGetPrimaryMonitor(), &monX, &monY);
       const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
-      m_winPos.x              = monX + (mode->width - m_winSize.x) / 2;
-      m_winPos.y              = monY + (mode->height - m_winSize.y) / 2;
+      int targetX             = monX + (mode->width - static_cast<int>(m_winSize.x)) / 2;
+      int targetY             = monY + (mode->height - static_cast<int>(m_winSize.y)) / 2;
+      m_winPos.x              = targetX < monX ? monX : targetX;
+      m_winPos.y              = targetY < monY ? monY : targetY;
     }
   }
 
